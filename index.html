@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The Itchy Wombat 🐾</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(#aee0ff 0%, #cdeeff 100%);
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .wrap {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 16px;
+  }
+  .score {
+    font-size: clamp(20px, 5vw, 32px);
+    font-weight: 800;
+    color: #2f6b27;
+    background: #ffffffcc;
+    border: 3px solid #5fb84f;
+    border-radius: 999px;
+    padding: 8px 24px;
+    box-shadow: 0 4px 0 #3f9a37;
+    letter-spacing: 0.02em;
+  }
+  .stage { position: relative; line-height: 0; }
+  canvas {
+    width: min(92vw, 560px);
+    height: auto;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    border: 4px solid #3f9a37;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .hint {
+    font-size: clamp(13px, 3.5vw, 16px);
+    color: #2f6b27;
+    background: #ffffffaa;
+    padding: 6px 16px;
+    border-radius: 999px;
+  }
+  .pop {
+    position: absolute;
+    font-weight: 800;
+    color: #ffeb3b;
+    -webkit-text-stroke: 1.5px #b5820f;
+    text-stroke: 1.5px #b5820f;
+    font-size: 26px;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    animation: floatUp 0.7s ease-out forwards;
+  }
+  @keyframes floatUp {
+    0%   { opacity: 1; transform: translate(-50%, -50%) scale(0.6); }
+    30%  { opacity: 1; transform: translate(-50%, -120%) scale(1.2); }
+    100% { opacity: 0; transform: translate(-50%, -220%) scale(1); }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="score" id="score">🐾 Score: 0</div>
+    <div class="stage">
+      <canvas id="scene" width="64" height="48"></canvas>
+    </div>
+    <div class="hint">Tap the wombat to make it scratch! 🐾</div>
+  </div>
+
+<script>
+const cv = document.getElementById('scene');
+const ctx = cv.getContext('2d');
+const scoreEl = document.getElementById('score');
+const stage = document.querySelector('.stage');
+const W = 64, H = 48;
+
+let score = 0;
+let scratch = false;
+let scratchUntil = 0;
+
+const COL = {
+  sky: '#aee0ff', cloud: '#ffffff', sun: '#ffd84d',
+  grass: '#5fb84f', grassDark: '#3f9a37', blade: '#2f7d2a',
+  dark: '#2e2018',                      // outline
+  body: '#9b7b54',                      // greyish-brown fur
+  bodyLt: '#b89469',                     // back highlight
+  shadow: '#7a5e3e',                     // far legs / underside
+  nose: '#4a3a32',                       // big bare nose
+  noseLt: '#6a564a',
+  eye: '#1a120c', white: '#ffffff',
+  ear: '#6e553e', claw: '#211711',
+};
+
+// fixed decor so nothing flickers between frames
+const clouds = [[8, 6], [38, 9], [52, 5]];
+const blades = [];
+for (let x = 1; x < W; x += 3) blades.push([x, 30 + (x * 7 % 3)]);
+const flowers = [[10, 41, '#ffe24d'], [30, 45, '#ffffff'], [54, 42, '#ff9ed2'], [44, 46, '#ffffff']];
+
+function rect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
+
+// filled pixel ellipse centred at (cx,cy)
+function ell(cx, cy, rx, ry, c) {
+  for (let dy = -ry; dy <= ry; dy++) {
+    const t = 1 - (dy * dy) / (ry * ry);
+    if (t < 0) continue;
+    const dx = Math.floor(rx * Math.sqrt(t) + 0.5);
+    rect(cx - dx, cy + dy, dx * 2 + 1, 1, c);
+  }
+}
+
+function drawSun(cx, cy) {
+  rect(cx - 2, cy - 1, 5, 3, COL.sun);
+  rect(cx - 1, cy - 2, 3, 5, COL.sun);
+  rect(cx - 4, cy, 1, 1, COL.sun); rect(cx + 4, cy, 1, 1, COL.sun);
+  rect(cx, cy - 4, 1, 1, COL.sun); rect(cx, cy + 4, 1, 1, COL.sun);
+}
+function drawCloud(x, y) {
+  rect(x, y, 9, 3, COL.cloud);
+  rect(x + 2, y - 2, 5, 3, COL.cloud);
+}
+
+// side-view wombat, head to the left. B = vertical bob offset.
+function drawWombat(B, now) {
+  const y = v => v + B;
+
+  // ---- DARK SILHOUETTE PASS (union, draws clean outline) ----
+  // far (back) legs
+  rect(24, y(28), 3, 6, COL.dark);
+  rect(40, y(28), 3, 6, COL.dark);
+  // body + head + ear + nose, each grown by 1px
+  ell(34, y(23), 14, 9, COL.dark);
+  ell(21, y(22), 9, 8, COL.dark);
+  ell(18, y(14), 3, 4, COL.dark);
+  ell(13, y(24), 4, 4, COL.dark);
+  rect(46, y(20), 4, 3, COL.dark);            // tail nub
+
+  if (!scratch) {
+    // near legs down
+    rect(19, y(29), 5, 6, COL.dark);          // near front
+    rect(43, y(29), 5, 6, COL.dark);          // near hind
+  } else {
+    // near front leg stays, near hind raised toward neck
+    rect(19, y(29), 5, 6, COL.dark);
+    const wig = Math.round(Math.sin(now * 0.04));
+    rect(41, y(24), 6, 4, COL.dark);          // thigh
+    rect(36, y(22), 6, 4, COL.dark);          // mid
+    rect(30, y(21 + wig), 7, 4, COL.dark);    // lower + foot
+  }
+
+  // ---- FILL PASS ----
+  rect(24, y(28), 3, 6, COL.shadow);          // far legs behind
+  rect(40, y(28), 3, 6, COL.shadow);
+  ell(34, y(23), 13, 8, COL.body);            // body
+  ell(21, y(22), 8, 7, COL.body);             // head
+  ell(30, y(17), 9, 2, COL.bodyLt);           // back highlight
+  ell(18, y(14), 2, 3, COL.ear);              // ear outer
+  rect(18, y(13), 1, 2, COL.dark);            // inner ear shade
+  ell(13, y(24), 3, 3, COL.nose);             // big bare nose
+  rect(12, y(22), 2, 1, COL.noseLt);          // nose highlight
+  rect(46, y(20), 4, 3, COL.body);            // tail
+
+  if (!scratch) {
+    rect(19, y(29), 5, 6, COL.body);
+    rect(43, y(29), 5, 6, COL.body);
+    // claws
+    rect(20, y(34), 1, 1, COL.claw); rect(22, y(34), 1, 1, COL.claw);
+    rect(44, y(34), 1, 1, COL.claw); rect(46, y(34), 1, 1, COL.claw);
+    // open eye
+    rect(18, y(19), 2, 2, COL.eye);
+    rect(18, y(19), 1, 1, COL.white);
+  } else {
+    rect(19, y(29), 5, 6, COL.body);
+    rect(20, y(34), 1, 1, COL.claw); rect(22, y(34), 1, 1, COL.claw);
+    const wig = Math.round(Math.sin(now * 0.04));
+    rect(41, y(24), 6, 4, COL.body);          // thigh
+    rect(36, y(22), 6, 4, COL.body);          // mid
+    rect(31, y(22 + wig), 5, 2, COL.body);    // lower leg
+    rect(30, y(21 + wig), 3, 3, COL.shadow);  // wiggling foot
+    rect(30, y(23 + wig), 3, 1, COL.claw);    // foot claws
+    // happy closed eye  ( ^ )
+    rect(17, y(20), 1, 1, COL.eye); rect(18, y(19), 1, 1, COL.eye);
+    rect(19, y(19), 1, 1, COL.eye); rect(20, y(20), 1, 1, COL.eye);
+    // motion ticks near the scratch
+    rect(28, y(19 + wig), 1, 1, COL.white);
+    rect(27, y(22), 1, 1, COL.white);
+  }
+}
+
+function draw(now) {
+  ctx.clearRect(0, 0, W, H);
+  rect(0, 0, W, H, COL.sky);
+  drawSun(50, 9);
+  clouds.forEach(([x, yy]) => drawCloud(x, yy));
+  rect(0, 30, W, H - 30, COL.grass);
+  rect(0, 30, W, 1, COL.grassDark);
+  blades.forEach(([x, yy]) => rect(x, yy, 1, 2, COL.blade));
+  flowers.forEach(([x, yy, c]) => { rect(x, yy, 1, 1, c); rect(x, yy - 1, 1, 1, c); });
+
+  const bob = scratch ? 0 : Math.round(Math.sin(now / 600));
+  drawWombat(bob, now);
+
+  if (scratch && now > scratchUntil) scratch = false;
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+// wombat hit box (scene coords)
+function hitWombat(sx, sy) {
+  return sx >= 8 && sx <= 52 && sy >= 9 && sy <= 36;
+}
+
+function onTap(e) {
+  const rectBox = cv.getBoundingClientRect();
+  const cxp = (e.clientX ?? (e.touches && e.touches[0].clientX));
+  const cyp = (e.clientY ?? (e.touches && e.touches[0].clientY));
+  if (cxp == null) return;
+  const sx = (cxp - rectBox.left) / rectBox.width * W;
+  const sy = (cyp - rectBox.top) / rectBox.height * H;
+  if (!hitWombat(sx, sy)) return;
+
+  score++;
+  scoreEl.textContent = '🐾 Score: ' + score;
+  scratch = true;
+  scratchUntil = performance.now() + 750;
+
+  const pop = document.createElement('div');
+  pop.className = 'pop';
+  pop.textContent = '+1';
+  pop.style.left = (cxp - rectBox.left) + 'px';
+  pop.style.top = (cyp - rectBox.top) + 'px';
+  stage.appendChild(pop);
+  setTimeout(() => pop.remove(), 700);
+}
+
+cv.addEventListener('pointerdown', onTap);
+</script>
+</body>
+</html>
