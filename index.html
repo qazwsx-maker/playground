@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>playground · funthings</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="card">
+    <div class="badge">✨ playground</div>
+    <h1>fun<span>things</span></h1>
+    <p class="tagline">A little corner of the internet for experiments, ideas, and things built just for fun.</p>
+
+    <div class="links">
+      <a class="btn primary" href="https://github.com/qazwsx-maker/playground" target="_blank" rel="noopener">View on GitHub</a>
+      <a class="btn" href="#about">Learn more</a>
+    </div>
+
+    <section id="about" class="about">
+      <div class="dot-row">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      </div>
+      <p>This page is served by <strong>GitHub Pages</strong> and deployed automatically with <strong>GitHub Actions</strong> on every push to <code>main</code>.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>Built with 🛠️ · <span id="year"></span></p>
+  </footer>
+
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
