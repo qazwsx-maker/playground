@@ -95,13 +95,14 @@ const COL = {
   sky: '#aee0ff', cloud: '#ffffff', sun: '#ffd84d',
   grass: '#5fb84f', grassDark: '#3f9a37', blade: '#2f7d2a',
   dark: '#2e2018',                      // outline
-  body: '#9b7b54',                      // greyish-brown fur
-  bodyLt: '#b89469',                     // back highlight
-  shadow: '#7a5e3e',                     // far legs / underside
-  nose: '#4a3a32',                       // big bare nose
-  noseLt: '#6a564a',
-  eye: '#1a120c', white: '#ffffff',
-  ear: '#6e553e', claw: '#211711',
+  body: '#a17a45',                      // warm golden-brown fur
+  bodyLt: '#c8a366',                     // sunlit back highlight
+  face: '#7a5836',                       // darker brown face/muzzle
+  shadow: '#6b4d30',                     // far legs / underside
+  nose: '#3b2c24',                       // big bare nose
+  noseLt: '#5a463a',
+  eye: '#160f09', white: '#ffffff',
+  ear: '#6e503a', claw: '#211711',
 };
 
 // fixed decor so nothing flickers between frames
@@ -166,11 +167,12 @@ function drawWombat(B, now) {
   rect(40, y(28), 3, 6, COL.shadow);
   ell(34, y(23), 13, 8, COL.body);            // body
   ell(21, y(22), 8, 7, COL.body);             // head
-  ell(30, y(17), 9, 2, COL.bodyLt);           // back highlight
+  ell(33, y(17), 11, 3, COL.bodyLt);          // sunlit golden back
+  ell(18, y(25), 6, 5, COL.face);             // darker face/muzzle
   ell(18, y(14), 2, 3, COL.ear);              // ear outer
   rect(18, y(13), 1, 2, COL.dark);            // inner ear shade
-  ell(13, y(24), 3, 3, COL.nose);             // big bare nose
-  rect(12, y(22), 2, 1, COL.noseLt);          // nose highlight
+  ell(13, y(25), 3, 3, COL.nose);             // big bare nose
+  rect(12, y(23), 2, 1, COL.noseLt);          // nose highlight
   rect(46, y(20), 4, 3, COL.body);            // tail
 
   if (!scratch) {
@@ -180,8 +182,8 @@ function drawWombat(B, now) {
     rect(20, y(34), 1, 1, COL.claw); rect(22, y(34), 1, 1, COL.claw);
     rect(44, y(34), 1, 1, COL.claw); rect(46, y(34), 1, 1, COL.claw);
     // open eye
-    rect(18, y(19), 2, 2, COL.eye);
-    rect(18, y(19), 1, 1, COL.white);
+    rect(19, y(22), 2, 2, COL.eye);
+    rect(19, y(22), 1, 1, COL.white);
   } else {
     rect(19, y(29), 5, 6, COL.body);
     rect(20, y(34), 1, 1, COL.claw); rect(22, y(34), 1, 1, COL.claw);
@@ -192,8 +194,8 @@ function drawWombat(B, now) {
     rect(30, y(21 + wig), 3, 3, COL.shadow);  // wiggling foot
     rect(30, y(23 + wig), 3, 1, COL.claw);    // foot claws
     // happy closed eye  ( ^ )
-    rect(17, y(20), 1, 1, COL.eye); rect(18, y(19), 1, 1, COL.eye);
-    rect(19, y(19), 1, 1, COL.eye); rect(20, y(20), 1, 1, COL.eye);
+    rect(18, y(23), 1, 1, COL.eye); rect(19, y(22), 1, 1, COL.eye);
+    rect(20, y(22), 1, 1, COL.eye); rect(21, y(23), 1, 1, COL.eye);
     // motion ticks near the scratch
     rect(28, y(19 + wig), 1, 1, COL.white);
     rect(27, y(22), 1, 1, COL.white);
