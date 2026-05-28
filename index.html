@@ -95,13 +95,14 @@ const COL = {
   sky: '#aee0ff', cloud: '#ffffff', sun: '#ffd84d',
   grass: '#5fb84f', grassDark: '#3f9a37', blade: '#2f7d2a',
   dark: '#2e2018',                      // outline
-  body: '#9b7b54',                      // greyish-brown fur
-  bodyLt: '#b89469',                     // back highlight
-  shadow: '#7a5e3e',                     // far legs / underside
-  nose: '#4a3a32',                       // big bare nose
-  noseLt: '#6a564a',
-  eye: '#1a120c', white: '#ffffff',
-  ear: '#6e553e', claw: '#211711',
+  body: '#a17a45',                      // warm golden-brown fur
+  bodyLt: '#c8a366',                     // sunlit back highlight
+  face: '#7a5836',                       // darker brown face/muzzle
+  shadow: '#6b4d30',                     // far legs / underside
+  nose: '#3b2c24',                       // big bare nose
+  noseLt: '#5a463a',
+  eye: '#160f09', white: '#ffffff',
+  ear: '#6e503a', claw: '#211711',
 };
 
 // fixed decor so nothing flickers between frames
@@ -133,70 +134,68 @@ function drawCloud(x, y) {
   rect(x + 2, y - 2, 5, 3, COL.cloud);
 }
 
-// side-view wombat, head to the left. B = vertical bob offset.
+// 3/4 view: body angled right, broad face turned toward viewer.
+// B = vertical bob offset.
 function drawWombat(B, now) {
   const y = v => v + B;
+  const wig = Math.round(Math.sin(now * 0.04));
 
   // ---- DARK SILHOUETTE PASS (union, draws clean outline) ----
-  // far (back) legs
-  rect(24, y(28), 3, 6, COL.dark);
-  rect(40, y(28), 3, 6, COL.dark);
-  // body + head + ear + nose, each grown by 1px
-  ell(34, y(23), 14, 9, COL.dark);
-  ell(21, y(22), 9, 8, COL.dark);
-  ell(18, y(14), 3, 4, COL.dark);
-  ell(13, y(24), 4, 4, COL.dark);
-  rect(46, y(20), 4, 3, COL.dark);            // tail nub
+  rect(39, y(28), 3, 6, COL.dark);            // far hind leg
+  ell(35, y(23), 14, 9, COL.dark);            // body
+  ell(20, y(23), 11, 9, COL.dark);            // broad face
+  ell(14, y(14), 3, 4, COL.dark);             // left ear
+  ell(26, y(14), 3, 4, COL.dark);             // right ear
+  ell(20, y(28), 4, 3, COL.dark);             // big nose
+  rect(47, y(20), 3, 3, COL.dark);            // tail nub
+  rect(15, y(29), 5, 6, COL.dark);            // front-left leg
+  rect(23, y(29), 5, 6, COL.dark);            // front-right leg
 
   if (!scratch) {
-    // near legs down
-    rect(19, y(29), 5, 6, COL.dark);          // near front
-    rect(43, y(29), 5, 6, COL.dark);          // near hind
+    rect(43, y(29), 5, 6, COL.dark);          // hind leg down
   } else {
-    // near front leg stays, near hind raised toward neck
-    rect(19, y(29), 5, 6, COL.dark);
-    const wig = Math.round(Math.sin(now * 0.04));
-    rect(41, y(24), 6, 4, COL.dark);          // thigh
-    rect(36, y(22), 6, 4, COL.dark);          // mid
-    rect(30, y(21 + wig), 7, 4, COL.dark);    // lower + foot
+    rect(42, y(24), 6, 4, COL.dark);          // thigh
+    rect(38, y(22), 6, 3, COL.dark);          // mid
+    rect(32, y(20), 7, 3, COL.dark);          // reach to ear
+    rect(28, y(18 + wig), 4, 3, COL.dark);    // foot by right ear
   }
 
   // ---- FILL PASS ----
-  rect(24, y(28), 3, 6, COL.shadow);          // far legs behind
-  rect(40, y(28), 3, 6, COL.shadow);
-  ell(34, y(23), 13, 8, COL.body);            // body
-  ell(21, y(22), 8, 7, COL.body);             // head
-  ell(30, y(17), 9, 2, COL.bodyLt);           // back highlight
-  ell(18, y(14), 2, 3, COL.ear);              // ear outer
-  rect(18, y(13), 1, 2, COL.dark);            // inner ear shade
-  ell(13, y(24), 3, 3, COL.nose);             // big bare nose
-  rect(12, y(22), 2, 1, COL.noseLt);          // nose highlight
-  rect(46, y(20), 4, 3, COL.body);            // tail
+  rect(39, y(28), 3, 6, COL.shadow);          // far hind leg behind
+  ell(35, y(23), 13, 8, COL.body);            // body
+  ell(20, y(23), 10, 8, COL.body);            // face
+  ell(37, y(17), 9, 3, COL.bodyLt);           // sunlit golden back
+  ell(20, y(29), 6, 3, COL.face);             // darker muzzle
+  ell(14, y(14), 2, 3, COL.ear); rect(14, y(13), 1, 2, COL.dark);  // left ear
+  ell(26, y(14), 2, 3, COL.ear); rect(26, y(13), 1, 2, COL.dark);  // right ear
+  ell(20, y(28), 3, 2, COL.nose);             // big bare nose
+  rect(19, y(27), 2, 1, COL.noseLt);          // nose highlight
+  rect(47, y(20), 3, 3, COL.body);            // tail
+  rect(15, y(29), 5, 6, COL.body);            // front-left leg
+  rect(23, y(29), 5, 6, COL.body);            // front-right leg
+  rect(16, y(34), 1, 1, COL.claw); rect(18, y(34), 1, 1, COL.claw);
+  rect(24, y(34), 1, 1, COL.claw); rect(26, y(34), 1, 1, COL.claw);
 
   if (!scratch) {
-    rect(19, y(29), 5, 6, COL.body);
-    rect(43, y(29), 5, 6, COL.body);
-    // claws
-    rect(20, y(34), 1, 1, COL.claw); rect(22, y(34), 1, 1, COL.claw);
+    rect(43, y(29), 5, 6, COL.body);          // hind leg
     rect(44, y(34), 1, 1, COL.claw); rect(46, y(34), 1, 1, COL.claw);
-    // open eye
-    rect(18, y(19), 2, 2, COL.eye);
-    rect(18, y(19), 1, 1, COL.white);
+    // open eyes
+    rect(16, y(24), 2, 2, COL.eye); rect(16, y(24), 1, 1, COL.white);
+    rect(23, y(24), 2, 2, COL.eye); rect(23, y(24), 1, 1, COL.white);
   } else {
-    rect(19, y(29), 5, 6, COL.body);
-    rect(20, y(34), 1, 1, COL.claw); rect(22, y(34), 1, 1, COL.claw);
-    const wig = Math.round(Math.sin(now * 0.04));
-    rect(41, y(24), 6, 4, COL.body);          // thigh
-    rect(36, y(22), 6, 4, COL.body);          // mid
-    rect(31, y(22 + wig), 5, 2, COL.body);    // lower leg
-    rect(30, y(21 + wig), 3, 3, COL.shadow);  // wiggling foot
-    rect(30, y(23 + wig), 3, 1, COL.claw);    // foot claws
-    // happy closed eye  ( ^ )
-    rect(17, y(20), 1, 1, COL.eye); rect(18, y(19), 1, 1, COL.eye);
-    rect(19, y(19), 1, 1, COL.eye); rect(20, y(20), 1, 1, COL.eye);
+    rect(42, y(24), 6, 4, COL.body);          // thigh
+    rect(38, y(22), 6, 3, COL.body);          // mid
+    rect(32, y(20), 7, 3, COL.body);          // reach to ear
+    rect(28, y(18 + wig), 4, 3, COL.shadow);  // wiggling foot
+    rect(28, y(20 + wig), 4, 1, COL.claw);    // foot claws
+    // happy closed eyes  ( ^  ^ )
+    rect(15, y(25), 1, 1, COL.eye); rect(16, y(24), 1, 1, COL.eye);
+    rect(17, y(24), 1, 1, COL.eye); rect(18, y(25), 1, 1, COL.eye);
+    rect(22, y(25), 1, 1, COL.eye); rect(23, y(24), 1, 1, COL.eye);
+    rect(24, y(24), 1, 1, COL.eye); rect(25, y(25), 1, 1, COL.eye);
     // motion ticks near the scratch
-    rect(28, y(19 + wig), 1, 1, COL.white);
-    rect(27, y(22), 1, 1, COL.white);
+    rect(32, y(17 + wig), 1, 1, COL.white);
+    rect(33, y(21), 1, 1, COL.white);
   }
 }
 
