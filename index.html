@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="th">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>เจ้าวอมแบทขี้เกา 🐾</title>
+<title>The Itchy Wombat 🐾</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
@@ -73,11 +73,11 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="score" id="score">🐾 คะแนน: 0</div>
+    <div class="score" id="score">🐾 Score: 0</div>
     <div class="stage">
       <canvas id="scene" width="64" height="48"></canvas>
     </div>
-    <div class="hint">แตะตัวเจ้าวอมแบทให้มันเกา! 🐾</div>
+    <div class="hint">Tap the wombat to make it scratch! 🐾</div>
   </div>
 
 <script>
@@ -94,18 +94,33 @@ let scratchUntil = 0;
 const COL = {
   sky: '#aee0ff', cloud: '#ffffff', sun: '#ffd84d',
   grass: '#5fb84f', grassDark: '#3f9a37', blade: '#2f7d2a',
-  dark: '#3a2414', body: '#9a6334', bodyLt: '#b5824f',
-  belly: '#e8c79a', eye: '#1a1208', white: '#ffffff',
-  nose: '#2a1a10', paw: '#7a4a28', pink: '#d98c8c',
+  dark: '#2e2018',                      // outline
+  body: '#9b7b54',                      // greyish-brown fur
+  bodyLt: '#b89469',                     // back highlight
+  shadow: '#7a5e3e',                     // far legs / underside
+  nose: '#4a3a32',                       // big bare nose
+  noseLt: '#6a564a',
+  eye: '#1a120c', white: '#ffffff',
+  ear: '#6e553e', claw: '#211711',
 };
 
 // fixed decor so nothing flickers between frames
 const clouds = [[8, 6], [38, 9], [52, 5]];
 const blades = [];
 for (let x = 1; x < W; x += 3) blades.push([x, 30 + (x * 7 % 3)]);
-const flowers = [[12, 41, '#ffe24d'], [30, 45, '#ffffff'], [49, 42, '#ff9ed2'], [22, 46, '#ffffff']];
+const flowers = [[10, 41, '#ffe24d'], [30, 45, '#ffffff'], [54, 42, '#ff9ed2'], [44, 46, '#ffffff']];
 
-function rect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+function rect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
+
+// filled pixel ellipse centred at (cx,cy)
+function ell(cx, cy, rx, ry, c) {
+  for (let dy = -ry; dy <= ry; dy++) {
+    const t = 1 - (dy * dy) / (ry * ry);
+    if (t < 0) continue;
+    const dx = Math.floor(rx * Math.sqrt(t) + 0.5);
+    rect(cx - dx, cy + dy, dx * 2 + 1, 1, c);
+  }
+}
 
 function drawSun(cx, cy) {
   rect(cx - 2, cy - 1, 5, 3, COL.sun);
@@ -118,96 +133,94 @@ function drawCloud(x, y) {
   rect(x + 2, y - 2, 5, 3, COL.cloud);
 }
 
-// wombat body contour: [localY, halfWidth], centered at local x = 16
-const contour = [
-  [3,6],[4,8],[5,9],[6,10],[7,10],[8,10],[9,10],[10,9],[11,9],
-  [12,10],[13,11],[14,12],[15,12],[16,12],[17,12],[18,12],
-  [19,11],[20,11],[21,10],[22,9],[23,7],[24,5]
-];
-const CX = 16;
+// side-view wombat, head to the left. B = vertical bob offset.
+function drawWombat(B, now) {
+  const y = v => v + B;
 
-function drawWombat(ox, oy, now) {
-  const o = (x, y) => [ox + x, oy + y];
-
-  // ears (behind head top)
-  rect(ox + 10, oy + 1, 3, 4, COL.dark);
-  rect(ox + 11, oy + 2, 1, 2, COL.pink);
-  rect(ox + 19, oy + 1, 3, 4, COL.dark);
-  rect(ox + 20, oy + 2, 1, 2, COL.pink);
-
-  // dark silhouette
-  for (const [y, hw] of contour) rect(ox + CX - hw, oy + y, 2 * hw, 1, COL.dark);
-  // body fill (leaves top+bottom+sides dark = outline)
-  for (const [y, hw] of contour) if (y > 3 && y < 24) rect(ox + CX - hw + 1, oy + y, 2 * hw - 2, 1, COL.body);
-  // soft highlight on head
-  rect(ox + CX - 4, oy + 4, 8, 1, COL.bodyLt);
-  // belly
-  for (const [y, hw] of contour) {
-    if (y >= 13 && y <= 22) {
-      const bhw = Math.min(hw - 3, 7);
-      if (bhw > 0) rect(ox + CX - bhw, oy + y, 2 * bhw, 1, COL.belly);
-    }
-  }
-
-  // eyes + highlight
-  rect(ox + 11, oy + 6, 2, 3, COL.eye);
-  rect(ox + 19, oy + 6, 2, 3, COL.eye);
-  rect(ox + 11, oy + 6, 1, 1, COL.white);
-  rect(ox + 19, oy + 6, 1, 1, COL.white);
-  // nose
-  rect(ox + 15, oy + 10, 2, 2, COL.nose);
-
-  // front paws on belly
-  rect(ox + 11, oy + 20, 4, 4, COL.paw);
-  rect(ox + 17, oy + 20, 4, 4, COL.paw);
-  rect(ox + 12, oy + 20, 1, 4, COL.dark);
-  rect(ox + 18, oy + 20, 1, 4, COL.dark);
-
-  // left hind foot (always down)
-  rect(ox + 6, oy + 23, 5, 3, COL.body);
-  rect(ox + 6, oy + 25, 5, 1, COL.dark);
+  // ---- DARK SILHOUETTE PASS (union, draws clean outline) ----
+  // far (back) legs
+  rect(24, y(28), 3, 6, COL.dark);
+  rect(40, y(28), 3, 6, COL.dark);
+  // body + head + ear + nose, each grown by 1px
+  ell(34, y(23), 14, 9, COL.dark);
+  ell(21, y(22), 9, 8, COL.dark);
+  ell(18, y(14), 3, 4, COL.dark);
+  ell(13, y(24), 4, 4, COL.dark);
+  rect(46, y(20), 4, 3, COL.dark);            // tail nub
 
   if (!scratch) {
-    // right hind foot resting
-    rect(ox + 21, oy + 23, 5, 3, COL.body);
-    rect(ox + 21, oy + 25, 5, 1, COL.dark);
+    // near legs down
+    rect(19, y(29), 5, 6, COL.dark);          // near front
+    rect(43, y(29), 5, 6, COL.dark);          // near hind
   } else {
-    // right hind leg raised, scratching near the cheek/ear
-    const wig = Math.round(Math.sin(now * 0.035) * 1);
-    rect(ox + 24, oy + 15, 3, 6, COL.body);      // thigh
-    rect(ox + 26, oy + 9, 2, 8, COL.body);       // shin
-    rect(ox + 24, oy + 8 + wig, 3, 2, COL.paw);  // wiggling foot
-    rect(ox + 24, oy + 8 + wig, 3, 1, COL.dark);
-    // motion ticks
-    rect(ox + 22, oy + 7 + wig, 1, 1, COL.white);
-    rect(ox + 23, oy + 11, 1, 1, COL.white);
+    // near front leg stays, near hind raised toward neck
+    rect(19, y(29), 5, 6, COL.dark);
+    const wig = Math.round(Math.sin(now * 0.04));
+    rect(41, y(24), 6, 4, COL.dark);          // thigh
+    rect(36, y(22), 6, 4, COL.dark);          // mid
+    rect(30, y(21 + wig), 7, 4, COL.dark);    // lower + foot
+  }
+
+  // ---- FILL PASS ----
+  rect(24, y(28), 3, 6, COL.shadow);          // far legs behind
+  rect(40, y(28), 3, 6, COL.shadow);
+  ell(34, y(23), 13, 8, COL.body);            // body
+  ell(21, y(22), 8, 7, COL.body);             // head
+  ell(30, y(17), 9, 2, COL.bodyLt);           // back highlight
+  ell(18, y(14), 2, 3, COL.ear);              // ear outer
+  rect(18, y(13), 1, 2, COL.dark);            // inner ear shade
+  ell(13, y(24), 3, 3, COL.nose);             // big bare nose
+  rect(12, y(22), 2, 1, COL.noseLt);          // nose highlight
+  rect(46, y(20), 4, 3, COL.body);            // tail
+
+  if (!scratch) {
+    rect(19, y(29), 5, 6, COL.body);
+    rect(43, y(29), 5, 6, COL.body);
+    // claws
+    rect(20, y(34), 1, 1, COL.claw); rect(22, y(34), 1, 1, COL.claw);
+    rect(44, y(34), 1, 1, COL.claw); rect(46, y(34), 1, 1, COL.claw);
+    // open eye
+    rect(18, y(19), 2, 2, COL.eye);
+    rect(18, y(19), 1, 1, COL.white);
+  } else {
+    rect(19, y(29), 5, 6, COL.body);
+    rect(20, y(34), 1, 1, COL.claw); rect(22, y(34), 1, 1, COL.claw);
+    const wig = Math.round(Math.sin(now * 0.04));
+    rect(41, y(24), 6, 4, COL.body);          // thigh
+    rect(36, y(22), 6, 4, COL.body);          // mid
+    rect(31, y(22 + wig), 5, 2, COL.body);    // lower leg
+    rect(30, y(21 + wig), 3, 3, COL.shadow);  // wiggling foot
+    rect(30, y(23 + wig), 3, 1, COL.claw);    // foot claws
+    // happy closed eye  ( ^ )
+    rect(17, y(20), 1, 1, COL.eye); rect(18, y(19), 1, 1, COL.eye);
+    rect(19, y(19), 1, 1, COL.eye); rect(20, y(20), 1, 1, COL.eye);
+    // motion ticks near the scratch
+    rect(28, y(19 + wig), 1, 1, COL.white);
+    rect(27, y(22), 1, 1, COL.white);
   }
 }
 
 function draw(now) {
   ctx.clearRect(0, 0, W, H);
-  // sky
   rect(0, 0, W, H, COL.sky);
   drawSun(50, 9);
-  clouds.forEach(([x, y]) => drawCloud(x, y));
-  // grass
+  clouds.forEach(([x, yy]) => drawCloud(x, yy));
   rect(0, 30, W, H - 30, COL.grass);
   rect(0, 30, W, 1, COL.grassDark);
-  blades.forEach(([x, y]) => rect(x, y, 1, 2, COL.blade));
-  flowers.forEach(([x, y, c]) => { rect(x, y, 1, 1, c); rect(x, y - 1, 1, 1, c); });
+  blades.forEach(([x, yy]) => rect(x, yy, 1, 2, COL.blade));
+  flowers.forEach(([x, yy, c]) => { rect(x, yy, 1, 1, c); rect(x, yy - 1, 1, 1, c); });
 
-  // idle bob when not scratching
   const bob = scratch ? 0 : Math.round(Math.sin(now / 600));
-  drawWombat(16, 7 + bob, now);
+  drawWombat(bob, now);
 
   if (scratch && now > scratchUntil) scratch = false;
   requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);
 
-// wombat hit box in scene coords
+// wombat hit box (scene coords)
 function hitWombat(sx, sy) {
-  return sx >= 18 && sx <= 48 && sy >= 6 && sy <= 36;
+  return sx >= 8 && sx <= 52 && sy >= 9 && sy <= 36;
 }
 
 function onTap(e) {
@@ -220,7 +233,7 @@ function onTap(e) {
   if (!hitWombat(sx, sy)) return;
 
   score++;
-  scoreEl.textContent = '🐾 คะแนน: ' + score;
+  scoreEl.textContent = '🐾 Score: ' + score;
   scratch = true;
   scratchUntil = performance.now() + 750;
 
