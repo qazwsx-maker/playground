@@ -23,17 +23,19 @@
     gap: 16px;
     padding: 16px;
   }
+  .scorebar { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
   .score {
-    font-size: clamp(20px, 5vw, 32px);
+    font-size: clamp(18px, 4.5vw, 30px);
     font-weight: 800;
     color: #2f6b27;
     background: #ffffffcc;
     border: 3px solid #5fb84f;
     border-radius: 999px;
-    padding: 8px 24px;
+    padding: 8px 22px;
     box-shadow: 0 4px 0 #3f9a37;
     letter-spacing: 0.02em;
   }
+  .score.best { color: #b5820f; border-color: #ffce4d; box-shadow: 0 4px 0 #e0a800; }
   .stage { position: relative; line-height: 0; }
   canvas {
     width: min(92vw, 560px);
@@ -64,6 +66,7 @@
     transform: translate(-50%, -50%);
     animation: floatUp 0.7s ease-out forwards;
   }
+  .pop.treat { color: #9be24d; -webkit-text-stroke: 1.5px #2f6b27; text-stroke: 1.5px #2f6b27; }
   @keyframes floatUp {
     0%   { opacity: 1; transform: translate(-50%, -50%) scale(0.6); }
     30%  { opacity: 1; transform: translate(-50%, -120%) scale(1.2); }
@@ -73,23 +76,94 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="score" id="score">🐾 Score: 0</div>
+    <div class="scorebar">
+      <div class="score" id="score">🐾 Score: 0</div>
+      <div class="score best" id="best">🏆 Best: 0</div>
+    </div>
     <div class="stage">
       <canvas id="scene" width="64" height="48"></canvas>
     </div>
-    <div class="hint">Tap the wombat to make it scratch! 🐾</div>
+    <div class="hint">Tap the wombat to scratch · grab the treats! 🐾</div>
   </div>
 
 <script>
 const cv = document.getElementById('scene');
 const ctx = cv.getContext('2d');
 const scoreEl = document.getElementById('score');
+const bestEl = document.getElementById('best');
 const stage = document.querySelector('.stage');
 const W = 64, H = 48;
 
 let score = 0;
 let scratch = false;
 let scratchUntil = 0;
+
+let best = parseInt(localStorage.getItem('wombatBest') || '0', 10) || 0;
+bestEl.textContent = '🏆 Best: ' + best;
+
+function addScore(n) {
+  score += n;
+  scoreEl.textContent = '🐾 Score: ' + score;
+  if (score > best) {
+    best = score;
+    localStorage.setItem('wombatBest', best);
+    bestEl.textContent = '🏆 Best: ' + best;
+  }
+}
+
+// ---- sound (Web Audio, synthesised — no files) ----
+let audioCtx, noiseBuf;
+function ensureAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const len = Math.floor(audioCtx.sampleRate * 0.2);
+    noiseBuf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function playScratch() {
+  ensureAudio();
+  const t0 = audioCtx.currentTime;
+  for (let i = 0; i < 3; i++) {
+    const src = audioCtx.createBufferSource(); src.buffer = noiseBuf;
+    const bp = audioCtx.createBiquadFilter(); bp.type = 'bandpass';
+    bp.frequency.value = 1700 + i * 250; bp.Q.value = 0.9;
+    const g = audioCtx.createGain();
+    const t = t0 + i * 0.13;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.22, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    src.connect(bp).connect(g).connect(audioCtx.destination);
+    src.start(t); src.stop(t + 0.12);
+  }
+}
+function playCollect() {
+  ensureAudio();
+  const now = audioCtx.currentTime;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(620, now);
+  o.frequency.exponentialRampToValueAtTime(1180, now + 0.12);
+  g.gain.setValueAtTime(0.0001, now);
+  g.gain.exponentialRampToValueAtTime(0.3, now + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(now); o.stop(now + 0.22);
+}
+
+// ---- collectible treats on the grass ----
+const TREAT_VALUE = 5;
+const treats = [];   // { x, y, type }
+function spawnTreat() {
+  if (treats.length >= 3) return;
+  const x = 5 + Math.floor(Math.random() * 54);
+  const y = 33 + Math.floor(Math.random() * 11);
+  treats.push({ x, y, type: Math.floor(Math.random() * 3) });
+}
+setInterval(spawnTreat, 1600);
+spawnTreat();
 
 const COL = {
   sky: '#aee0ff', cloud: '#ffffff', sun: '#ffd84d',
@@ -134,6 +208,24 @@ function drawCloud(x, y) {
   rect(x + 2, y - 2, 5, 3, COL.cloud);
 }
 
+function drawTreat(t) {
+  const x = t.x, y = t.y;
+  if (t.type === 0) {            // berry
+    rect(x, y, 3, 3, '#e0413b');
+    rect(x, y, 1, 1, '#ff8a84');
+    rect(x + 1, y - 1, 1, 1, '#3f9a37');
+  } else if (t.type === 1) {     // mushroom
+    rect(x, y, 3, 2, '#d94f4f');
+    rect(x, y, 1, 1, '#ffffff'); rect(x + 2, y, 1, 1, '#ffffff');
+    rect(x + 1, y + 2, 1, 2, '#f0e6cf');
+  } else {                       // flower
+    rect(x + 1, y, 1, 1, '#ffd84d');
+    rect(x, y, 1, 1, '#ffffff'); rect(x + 2, y, 1, 1, '#ffffff');
+    rect(x + 1, y - 1, 1, 1, '#ffffff'); rect(x + 1, y + 1, 1, 1, '#ffffff');
+    rect(x + 1, y + 2, 1, 2, '#3f9a37');
+  }
+}
+
 // 3/4 view: body angled right, broad face turned toward viewer.
 // B = vertical bob offset.
 function drawWombat(B, now) {
@@ -176,6 +268,13 @@ function drawWombat(B, now) {
   rect(16, y(34), 1, 1, COL.claw); rect(18, y(34), 1, 1, COL.claw);
   rect(24, y(34), 1, 1, COL.claw); rect(26, y(34), 1, 1, COL.claw);
 
+  // ---- fluffy fur detail ----
+  // light hairs poking up along the back & head outline
+  [[26,13],[28,12],[30,13],[33,12],[36,13],[39,12],[42,13],[45,12],
+   [13,16],[16,15],[24,15],[29,16]].forEach(([fx, fy]) => rect(fx, y(fy), 1, 2, COL.bodyLt));
+  // soft darker fur streaks for a layered, fluffy texture
+  [[31,22,4],[36,21,5],[41,23,4]].forEach(([fx, fy, fh]) => rect(fx, y(fy), 1, fh, COL.shadow));
+
   if (!scratch) {
     rect(43, y(29), 5, 6, COL.body);          // hind leg
     rect(44, y(34), 1, 1, COL.claw); rect(46, y(34), 1, 1, COL.claw);
@@ -211,6 +310,7 @@ function draw(now) {
 
   const bob = scratch ? 0 : Math.round(Math.sin(now / 600));
   drawWombat(bob, now);
+  treats.forEach(drawTreat);
 
   if (scratch && now > scratchUntil) scratch = false;
   requestAnimationFrame(draw);
@@ -222,6 +322,16 @@ function hitWombat(sx, sy) {
   return sx >= 8 && sx <= 52 && sy >= 9 && sy <= 36;
 }
 
+function popText(left, top, text, cls) {
+  const pop = document.createElement('div');
+  pop.className = 'pop' + (cls ? ' ' + cls : '');
+  pop.textContent = text;
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+  stage.appendChild(pop);
+  setTimeout(() => pop.remove(), 700);
+}
+
 function onTap(e) {
   const rectBox = cv.getBoundingClientRect();
   const cxp = (e.clientX ?? (e.touches && e.touches[0].clientX));
@@ -229,20 +339,27 @@ function onTap(e) {
   if (cxp == null) return;
   const sx = (cxp - rectBox.left) / rectBox.width * W;
   const sy = (cyp - rectBox.top) / rectBox.height * H;
-  if (!hitWombat(sx, sy)) return;
+  const toScreenX = x => x / W * rectBox.width;
+  const toScreenY = y => y / H * rectBox.height;
 
-  score++;
-  scoreEl.textContent = '🐾 Score: ' + score;
+  // treats first (they sit in front)
+  for (let i = 0; i < treats.length; i++) {
+    const t = treats[i];
+    if (sx >= t.x - 2 && sx <= t.x + 5 && sy >= t.y - 3 && sy <= t.y + 5) {
+      treats.splice(i, 1);
+      addScore(TREAT_VALUE);
+      playCollect();
+      popText(toScreenX(t.x + 1), toScreenY(t.y), '+' + TREAT_VALUE, 'treat');
+      return;
+    }
+  }
+
+  if (!hitWombat(sx, sy)) return;
+  addScore(1);
   scratch = true;
   scratchUntil = performance.now() + 750;
-
-  const pop = document.createElement('div');
-  pop.className = 'pop';
-  pop.textContent = '+1';
-  pop.style.left = (cxp - rectBox.left) + 'px';
-  pop.style.top = (cyp - rectBox.top) + 'px';
-  stage.appendChild(pop);
-  setTimeout(() => pop.remove(), 700);
+  playScratch();
+  popText(cxp - rectBox.left, cyp - rectBox.top, '+1');
 }
 
 cv.addEventListener('pointerdown', onTap);
