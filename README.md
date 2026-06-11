@@ -23,15 +23,22 @@ Play it on GitHub Pages.
 
 4. Climb **The Spire** — a turn-based endless dungeon with class skills, traits,
    elemental matchups, and a boss every 5 floors.
-5. Every soul you forge is remembered in the **Hall of Souls** (localStorage),
-   along with its deepest climb.
-6. **Share a link** (`?s=<seed>`) and anyone who opens it meets the *exact same hero*.
+5. **Gene Lab** — your hero's genetic code is a QR. Scan another player's QR with
+   your camera (or paste their gene link) and splice the codes:
+   - **⚗ FUSE** — deterministic: the same two parents always produce the same child,
+     anywhere in the world. Children carry a generation counter and their parents' names.
+   - **☢ MUTATE** — foreign DNA destabilises your soul into something new on every exposure.
+6. Every soul you forge is remembered in the **Hall of Souls** (localStorage),
+   along with its deepest climb and lineage.
+7. **Share a gene link** (`?g=<seed>`) and anyone who opens it meets the *exact same hero*.
 
 Same seed → same soul, for everyone, forever. Share seeds, not saves.
 
 ## Tech
 
-- Vanilla HTML/CSS/JS, zero dependencies
-- Procedural pixel sprites drawn on `<canvas>` (28×28 grid, auto-outlined, hue-shifted palettes)
+- Vanilla HTML/CSS/JS — only two tiny CDN libs for QR encode/decode, loaded lazily
+- Procedural pixel sprites on `<canvas>`: 32×32 chibi, top-left key light with
+  hue-shifted edge shading, auto-outline, 2-frame idle animation
+- Camera QR scanning via `BarcodeDetector` with a `jsQR` fallback
 - `crypto.subtle` SHA-256 with a pure-JS fallback
 - Deployed via GitHub Actions → GitHub Pages on every push to `main`

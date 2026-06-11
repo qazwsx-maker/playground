@@ -161,6 +161,11 @@ function makeRamp(h, s, l) {
     light: hsl(lerpHue(h, 50, 0.20), s - 4, l + 14),
   };
 }
+function darken(hex, f = 0.72) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.round(((n >> 16) & 255) * f), g = Math.round(((n >> 8) & 255) * f), b = Math.round((n & 255) * f);
+  return `rgb(${r},${g},${b})`;
+}
 
 /* ---------------- hero generation ---------------- */
 
@@ -205,8 +210,10 @@ async function generateHero(seed) {
   const look = {
     skin: SKIN_TONES[Math.floor(rng() * (rarityIdx >= 4 ? SKIN_TONES.length : SKIN_TONES.length - 1))],
     hair: pick(rng, HAIR_COLORS),
+    hairStyle: Math.floor(rng() * 3),     // 0 short · 1 long · 2 spiky
     armor: makeRamp(armorHue, 46, 46),
     accent: hsl(accentHue, 78, 60),
+    accentD: hsl(accentHue, 70, 42),
     eye: rarityIdx >= 3 ? rarity.color : '#1c2030',
     emblem: Math.floor(rng() * 5),
     pads: rng() < 0.55,
@@ -237,13 +244,20 @@ async function generateMonster(heroSeed, floor, runNonce) {
   };
   let name = pick(rng, MON_A) + pick(rng, MON_B);
   if (isBoss) name = `${name} the ${pick(rng, BOSS_TITLES)}`;
-  return { hash, rng: mulberry32(u32(bytes, 8)), name, element, stats, isBoss, floor };
+  return { hash, name, element, stats, isBoss, floor, archetype: u32(bytes, 8) % 4 };
 }
 
-/* ---------------- pixel sprite engine ---------------- */
+/* ============================================================
+   PIXEL SPRITE ENGINE v2
+   32×32 chibi (~2.5 heads tall), top-left key light,
+   edge shading + rim highlight, 2-frame idle bob.
+   ============================================================ */
 
-const SPR = 28; // sprite grid is SPR × SPR
+const SPR = 32;
 const OUTLINE = '#10121f';
+const SHADOW_C = 'rgba(8,10,22,0.5)';
+const METAL = '#cdd3e0', METAL_D = '#8a90a4', METAL_L = '#f0f3fa';
+const WOOD = '#8a5a33', WOOD_D = '#6b4226';
 
 function makeGrid(W, H) {
   const cells = new Array(W * H).fill(null);
@@ -255,7 +269,7 @@ function makeGrid(W, H) {
 }
 
 function rect(g, x, y, w, h, c) { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) g.set(x + i, y + j, c); }
-/* mirrored set/rect around the vertical centre of a 28-wide grid */
+/* mirrored around the vertical centre */
 function mset(g, x, y, c) { g.set(x, y, c); g.set(g.W - 1 - x, y, c); }
 function mrect(g, x, y, w, h, c) { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) mset(g, x + i, y + j, c); }
 
@@ -269,169 +283,270 @@ function applyOutline(g) {
   return o;
 }
 
-function buildHeroGrid(hero) {
+/* one consistent light direction (top-left): darken right/bottom edges,
+   highlight top/left edges — only for materials in the ramp map */
+function shadePass(g, ramps) {
+  const src = g.cells.slice();
+  const at = (x, y) => (x >= 0 && x < g.W && y >= 0 && y < g.H) ? src[y * g.W + x] : null;
+  for (let y = 0; y < g.H; y++) for (let x = 0; x < g.W; x++) {
+    const c = at(x, y);
+    if (!c || c === SHADOW_C) continue;
+    const m = ramps[c];
+    if (!m) continue;
+    const solid = (xx, yy) => { const v = at(xx, yy); return v && v !== SHADOW_C; };
+    if ((!solid(x + 1, y) && x >= g.W / 2) || !solid(x, y + 1)) g.set(x, y, m.dark);
+    else if (m.light && ((!solid(x - 1, y) && x < g.W / 2) || !solid(x, y - 1))) g.set(x, y, m.light);
+  }
+}
+
+/* ---- hero sprite: frame 0 = rest, frame 1 = 1px idle bob ---- */
+function buildHeroGrid(hero, frame = 0) {
   const g = makeGrid(SPR, SPR);
   const { look, cls } = hero;
   const [skin, skinSh] = look.skin;
   const A = look.armor, AC = look.accent;
-  const metal = '#c8cdd8', metalD = '#868da0', wood = '#8a5a33';
+  const yo = frame ? 1 : 0; // upper-body bob
 
-  /* cape (legendary+) behind everything */
+  /* ground shadow (static) */
+  mrect(g, 11, 28, 5, 1, SHADOW_C);
+  mset(g, 13, 29, SHADOW_C);
+
+  /* cape (legendary+) behind everything, bobs with body */
   if (look.cape) {
-    mrect(g, 8, 12, 2, 8, AC);
-    mrect(g, 9, 20, 1, 2, AC);
+    mrect(g, 9, 14 + yo, 2, 9, look.accentD);
+    mrect(g, 10, 23 + yo, 1, 2, look.accentD);
   }
 
-  /* head */
-  mrect(g, 11, 5, 3, 1, skin);
-  mrect(g, 10, 6, 4, 4, skin);
-  mrect(g, 11, 10, 3, 1, skin);
-  mset(g, 10, 9, skinSh); // jaw shading
-  /* eyes */
-  g.set(12, 8, look.eye); g.set(15, 8, look.eye);
-
-  /* torso */
-  mrect(g, 10, 12, 4, 5, A.mid);
-  mrect(g, 10, 12, 4, 1, look.trim ? A.light : A.mid);
-  mset(g, 10, 13, A.dark); mset(g, 10, 14, A.dark); mset(g, 10, 15, A.dark);
-  /* shoulders + arms */
-  if (look.pads) { mrect(g, 8, 12, 2, 2, A.light); }
-  mrect(g, 9, 13, 1, 3, A.dark);
-  mset(g, 9, 16, skin); // hands
-  /* belt */
-  mrect(g, 10, 17, 4, 1, A.dark);
-  mset(g, 13, 17, AC); // buckle (centre 2px via mirror)
-
-  /* chest emblem variants */
-  const cy = 14;
-  if (look.emblem === 1) { mset(g, 13, cy, AC); }
-  else if (look.emblem === 2) { mset(g, 13, 13, AC); mset(g, 13, 14, AC); mset(g, 13, 15, AC); }
-  else if (look.emblem === 3) { mset(g, 13, 13, AC); mset(g, 12, 14, AC); mset(g, 13, 15, AC); }
-  else if (look.emblem === 4) { mset(g, 13, 13, AC); mrect(g, 12, 14, 2, 1, AC); mset(g, 13, 15, AC); }
-
+  /* legs & boots (static — body compresses onto them when bobbing) */
   const robed = cls.key === 'mage' || cls.key === 'cleric';
   if (robed) {
-    /* robe skirt */
-    mrect(g, 10, 18, 4, 4, A.mid);
-    mrect(g, 9, 22, 5, 1, A.dark);
-    mset(g, 13, 19, AC); mset(g, 13, 21, AC);
+    mrect(g, 11, 21, 5, 5, A.mid);
+    mrect(g, 10, 26, 6, 1, A.dark);
+    mset(g, 15, 22, AC); mset(g, 15, 24, AC); // robe runes
   } else {
-    /* legs + boots */
-    mrect(g, 10, 18, 2, 4, A.dark);
-    mset(g, 12, 18, A.dark);
-    mrect(g, 9, 22, 3, 1, '#3a3326');
-    mset(g, 11, 21, '#3a3326');
+    mrect(g, 12, 21, 3, 4, A.dark);
+    mrect(g, 11, 25, 4, 2, '#3a3326');
+    mset(g, 11, 26, '#2a251c');
   }
 
-  /* ---- class headgear & weapons (asymmetric, drawn directly) ---- */
+  /* torso */
+  mrect(g, 12, 14 + yo, 4, 7, A.mid);
+  if (look.trim) mrect(g, 12, 14 + yo, 4, 1, A.light);
+  /* dither texture on lower torso (subtle) */
+  for (let x = 12; x <= 15; x++) if ((x + 19) % 2 === 0) mset(g, x, 19 + yo, A.dark);
+  /* belt */
+  mrect(g, 12, 20 + yo, 4, 1, A.dark);
+  mset(g, 15, 20 + yo, AC);
+
+  /* arms & hands */
+  mrect(g, 10, 15 + yo, 2, 4, A.dark);
+  mrect(g, 10, 19 + yo, 2, 2, skin);
+  if (look.pads) mrect(g, 9, 14 + yo, 3, 2, A.light);
+
+  /* chest emblem variants */
+  const cy = 16 + yo;
+  if (look.emblem === 1) { mset(g, 15, cy, AC); }
+  else if (look.emblem === 2) { mset(g, 15, cy - 1, AC); mset(g, 15, cy, AC); mset(g, 15, cy + 1, AC); }
+  else if (look.emblem === 3) { mset(g, 15, cy - 1, AC); mset(g, 14, cy, AC); mset(g, 15, cy + 1, AC); }
+  else if (look.emblem === 4) { mset(g, 15, cy - 1, AC); mrect(g, 14, cy, 2, 1, AC); mset(g, 15, cy + 1, AC); }
+
+  /* head (12 wide, round) */
+  mrect(g, 13, 3 + yo, 3, 1, skin);
+  mrect(g, 12, 4 + yo, 4, 1, skin);
+  mrect(g, 11, 5 + yo, 5, 8, skin);
+  mrect(g, 12, 13 + yo, 4, 1, skin);
+  /* cheek shade under jaw */
+  mrect(g, 12, 12 + yo, 4, 1, skinSh);
+  /* eyes: outer sclera + inner iris, looking ahead */
+  g.set(12, 8 + yo, METAL_L); g.set(13, 8 + yo, look.eye);
+  g.set(19, 8 + yo, METAL_L); g.set(18, 8 + yo, look.eye);
+  g.set(12, 9 + yo, METAL_L); g.set(13, 9 + yo, look.eye);
+  g.set(19, 9 + yo, METAL_L); g.set(18, 9 + yo, look.eye);
+  /* mouth */
+  mset(g, 15, 11 + yo, skinSh);
+
+  /* hair (classes whose head is visible) */
+  const hairy = cls.key === 'rogue' ? false : !(cls.key === 'knight' || cls.key === 'mage');
+  if (hairy) {
+    mrect(g, 12, 2 + yo, 4, 1, look.hair);
+    mrect(g, 11, 3 + yo, 5, 2, look.hair);
+    mrect(g, 11, 5 + yo, 2, 2, look.hair);
+    if (look.hairStyle === 1) { mrect(g, 11, 7 + yo, 1, 5, look.hair); }        // long
+    if (look.hairStyle === 2) { mset(g, 12, 1 + yo, look.hair); mset(g, 15, 1 + yo, look.hair); g.set(17, 1 + yo, look.hair); } // spiky
+  }
+
+  /* ---- class identity: headgear, weapons, off-hand ---- */
   switch (cls.key) {
     case 'knight': {
-      mrect(g, 11, 3, 3, 1, A.light);
-      mrect(g, 10, 4, 4, 2, A.mid);
-      mrect(g, 10, 6, 1, 3, A.mid);
-      mrect(g, 10, 7, 4, 1, A.dark); // visor brow
-      if (look.variant > 0) { g.set(13, 2, AC); g.set(14, 2, AC); g.set(13, 1, AC); } // plume
-      /* sword (right) */
-      g.set(22, 7, metal);
-      rect(g, 21, 8, 2, 8, metal); g.set(21, 8, '#eef2f8');
-      rect(g, 19, 16, 5, 1, A.dark);
-      rect(g, 21, 17, 1, 2, wood);
-      /* shield (left) */
-      rect(g, 4, 12, 3, 5, A.mid); rect(g, 4, 12, 3, 1, A.light);
-      g.set(5, 14, AC); rect(g, 4, 17, 3, 1, A.dark);
+      /* full helm with brow visor + crest */
+      mrect(g, 12, 2 + yo, 4, 1, A.light);
+      mrect(g, 11, 3 + yo, 5, 2, A.mid);
+      mrect(g, 11, 5 + yo, 1, 5, A.mid);
+      mrect(g, 11, 6 + yo, 5, 1, A.dark);
+      if (look.variant > 0) { mrect(g, 15, 0 + yo, 1, 2, AC); }
+      /* longsword (right) */
+      g.set(24, 5 + yo, METAL_L);
+      rect(g, 23, 6 + yo, 2, 11, METAL); rect(g, 23, 6 + yo, 1, 11, METAL_L);
+      rect(g, 21, 17 + yo, 6, 1, look.accentD);
+      rect(g, 23, 18 + yo, 1, 3, WOOD);
+      g.set(23, 21 + yo, '#ffd166');
+      /* kite shield (left) */
+      rect(g, 4, 13 + yo, 4, 6, A.mid); rect(g, 4, 13 + yo, 4, 1, A.light);
+      rect(g, 5, 19 + yo, 2, 1, A.dark);
+      g.set(5, 15 + yo, AC); g.set(6, 15 + yo, AC); g.set(5, 16 + yo, AC);
       break;
     }
     case 'mage': {
-      /* pointed hat */
-      mrect(g, 9, 6, 5, 1, A.dark);
-      mrect(g, 10, 5, 4, 1, A.mid);
-      mrect(g, 11, 4, 3, 1, A.mid);
-      mrect(g, 12, 3, 2, 1, A.mid);
-      mset(g, 13, 2, A.light);
-      g.set(14, 1, AC);
-      /* staff with orb (right) */
-      rect(g, 22, 7, 1, 12, wood);
-      rect(g, 21, 4, 3, 3, AC); g.set(22, 5, '#ffffff');
+      /* tall wizard hat with band */
+      mrect(g, 10, 6 + yo, 6, 1, A.dark);
+      mrect(g, 11, 5 + yo, 5, 1, A.mid);
+      mrect(g, 12, 4 + yo, 4, 1, A.mid);
+      mrect(g, 13, 2 + yo, 3, 2, A.mid);
+      mrect(g, 14, 0 + yo, 2, 2, A.light);
+      mrect(g, 11, 5 + yo, 5, 1, AC); // band
+      /* staff with orb + sparkles (right) */
+      rect(g, 25, 6 + yo, 1, 16, WOOD); rect(g, 25, 20 + yo, 1, 2, WOOD_D);
+      rect(g, 24, 3 + yo, 3, 3, AC); g.set(25, 4 + yo, '#ffffff');
+      g.set(28, 4 + yo, AC); g.set(23, 1 + yo, AC); g.set(27, 8 + yo, look.accentD);
       break;
     }
     case 'rogue': {
-      /* hood */
-      mrect(g, 10, 3, 4, 2, A.dark);
-      mrect(g, 9, 5, 2, 4, A.dark);
-      mrect(g, 11, 3, 3, 1, A.mid);
-      g.set(12, 8, AC); g.set(15, 8, AC); // glowing eyes under hood
-      mrect(g, 10, 11, 4, 1, AC); // scarf
-      /* twin daggers */
-      rect(g, 6, 11, 1, 4, metal); g.set(6, 10, '#eef2f8'); g.set(6, 15, wood);
-      rect(g, 21, 11, 1, 4, metal); g.set(21, 10, '#eef2f8'); g.set(21, 15, wood);
+      /* deep hood + face scarf, glowing eyes */
+      mrect(g, 12, 2 + yo, 4, 1, A.dark);
+      mrect(g, 11, 3 + yo, 5, 2, A.dark);
+      mrect(g, 11, 5 + yo, 1, 6, A.dark);
+      mrect(g, 12, 5 + yo, 1, 2, A.dark);
+      mrect(g, 11, 11 + yo, 5, 3, A.dark); // scarf over mouth
+      mrect(g, 11, 11 + yo, 5, 1, AC);
+      g.set(13, 8 + yo, AC); g.set(18, 8 + yo, AC);
+      g.set(13, 9 + yo, AC); g.set(18, 9 + yo, AC);
+      /* reverse-grip twin daggers */
+      rect(g, 8, 15 + yo, 1, 2, WOOD); rect(g, 8, 17 + yo, 1, 4, METAL); g.set(8, 21 + yo, METAL_L);
+      rect(g, 23, 15 + yo, 1, 2, WOOD); rect(g, 23, 17 + yo, 1, 4, METAL); g.set(23, 21 + yo, METAL_L);
+      /* belt pouch */
+      g.set(12, 20 + yo, WOOD); g.set(12, 21 + yo, WOOD_D);
       break;
     }
     case 'ranger': {
-      /* cap + feather */
-      mrect(g, 10, 4, 4, 2, A.mid);
-      mrect(g, 9, 5, 1, 1, A.dark);
-      g.set(16, 3, AC); g.set(17, 2, AC); g.set(17, 1, AC);
-      /* bow (right) */
-      rect(g, 23, 9, 1, 9, wood);
-      g.set(22, 8, wood); g.set(21, 7, wood);
-      g.set(22, 18, wood); g.set(21, 19, wood);
-      for (let y = 7; y <= 19; y++) g.set(20, y, '#e8e4d0');
+      /* hooded cap + feather */
+      mrect(g, 12, 2 + yo, 4, 1, A.mid);
+      mrect(g, 11, 3 + yo, 5, 2, A.mid);
+      mrect(g, 11, 5 + yo, 1, 2, A.dark);
+      g.set(18, 2 + yo, AC); g.set(19, 1 + yo, AC); g.set(20, 0 + yo, look.accentD);
+      /* longbow (right) */
+      rect(g, 26, 9 + yo, 1, 12, WOOD);
+      g.set(25, 8 + yo, WOOD); g.set(24, 7 + yo, WOOD_D);
+      g.set(25, 21 + yo, WOOD); g.set(24, 22 + yo, WOOD_D);
+      for (let y = 8; y <= 21; y++) g.set(27, y + yo, '#e8e4d0');
+      /* quiver over left shoulder */
+      rect(g, 7, 14 + yo, 2, 5, WOOD_D);
+      g.set(7, 13 + yo, AC); g.set(8, 13 + yo, look.accentD);
       break;
     }
     case 'cleric': {
-      /* circlet + hair */
-      mrect(g, 10, 4, 4, 2, look.hair);
-      mrect(g, 10, 5, 4, 1, AC);
-      /* staff with cross (right) */
-      rect(g, 22, 7, 1, 12, wood);
-      rect(g, 22, 3, 1, 3, '#ffd166'); rect(g, 21, 4, 3, 1, '#ffd166');
+      /* circlet + halo for epic+ */
+      mrect(g, 11, 4 + yo, 5, 1, AC);
+      if (hero.rarityIdx >= 3) { mrect(g, 13, 0 + yo, 3, 1, '#ffd166'); }
+      /* mace (right) */
+      rect(g, 24, 11 + yo, 1, 10, WOOD);
+      rect(g, 23, 7 + yo, 3, 4, METAL); rect(g, 23, 7 + yo, 1, 4, METAL_L);
+      g.set(24, 8 + yo, '#ffd166'); g.set(24, 9 + yo, '#ffd166');
+      /* holy tome (left hand) */
+      rect(g, 7, 17 + yo, 3, 3, look.accentD); rect(g, 7, 17 + yo, 3, 1, AC);
+      g.set(8, 18 + yo, '#ffd166');
       break;
     }
     case 'berserker': {
-      /* wild hair + horns */
-      mrect(g, 10, 3, 4, 2, look.hair);
-      mrect(g, 9, 4, 1, 2, look.hair);
-      g.set(8, 3, metal); g.set(8, 2, metal); g.set(9, 1, '#eef2f8');
-      g.set(19, 3, metal); g.set(19, 2, metal); g.set(18, 1, '#eef2f8');
-      /* war axe (right) */
-      rect(g, 22, 6, 1, 13, wood);
-      rect(g, 19, 6, 3, 4, metal); rect(g, 19, 6, 1, 4, metalD);
-      rect(g, 24, 6, 3, 4, metal); rect(g, 26, 6, 1, 4, metalD);
+      /* horned helm + fur mantle + war paint */
+      mrect(g, 12, 2 + yo, 4, 2, METAL_D);
+      mrect(g, 11, 3 + yo, 5, 1, METAL_D);
+      g.set(9, 2 + yo, METAL); g.set(9, 1 + yo, METAL); g.set(10, 3 + yo, METAL_D); g.set(8, 0 + yo, METAL_L);
+      g.set(22, 2 + yo, METAL); g.set(22, 1 + yo, METAL); g.set(21, 3 + yo, METAL_D); g.set(23, 0 + yo, METAL_L);
+      mrect(g, 12, 10 + yo, 1, 1, AC); // war paint
+      mrect(g, 9, 13 + yo, 4, 2, '#d8d4c8'); // fur mantle
+      mset(g, 9, 15 + yo, '#b8b4a8');
+      /* great double axe (right) */
+      rect(g, 25, 5 + yo, 1, 16, WOOD); rect(g, 25, 19 + yo, 1, 2, WOOD_D);
+      rect(g, 22, 6 + yo, 3, 5, METAL); rect(g, 22, 6 + yo, 1, 5, METAL_D);
+      rect(g, 26, 6 + yo, 3, 5, METAL); rect(g, 28, 6 + yo, 1, 5, METAL_D);
+      g.set(23, 7 + yo, METAL_L); g.set(27, 7 + yo, METAL_L);
       break;
     }
   }
+
+  /* consistent top-left lighting on organic + armor materials */
+  const ramps = {
+    [skin]: { dark: skinSh, light: null },
+    [A.mid]: { dark: A.dark, light: A.light },
+    [look.hair]: { dark: darken(look.hair, 0.7), light: null },
+  };
+  shadePass(g, ramps);
 
   return applyOutline(g);
 }
 
+/* ---- monster sprite: archetype features over a symmetric noise core ---- */
 function buildMonsterGrid(mon) {
-  const size = mon.isBoss ? 18 : 14;
-  const g = makeGrid(size + 4, size + 4);
-  const rng = mulberry32(hexToBytes(mon.hash).slice(0, 4).reduce((a, b) => (a << 8) + b, 0) >>> 0);
+  const size = mon.isBoss ? 22 : 18;
+  const W = size + 6, H = size + 6;
+  const g = makeGrid(W, H);
+  const rng = mulberry32(u32(hexToBytes(mon.hash), 12));
   const baseHue = { ember: 14, tide: 210, gale: 90, stone: 28, bloom: 130, umbra: 268 }[mon.element.key];
-  const ramp = makeRamp(baseHue + Math.floor(rng() * 24) - 12, 52, mon.isBoss ? 42 : 48);
+  const ramp = makeRamp(baseHue + Math.floor(rng() * 24) - 12, 52, mon.isBoss ? 40 : 48);
+  const ox = 3, oy = 3;
   const half = Math.ceil(size / 2);
-  const ox = 2, oy = 2;
-  /* mirrored noise body with a denser core — the classic "no two alike" silhouette */
+  const cx = ox + size / 2 - 0.5, cy = oy + size / 2 - 0.5;
+
+  /* radial-falloff noise body */
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < half; x++) {
-      const cx = half - x, cyd = Math.abs(y - size / 2) / (size / 2);
-      const density = 0.78 - (cx / half) * 0.45 - cyd * 0.28;
-      if (rng() < density) {
-        const c = rng() < 0.22 ? ramp.dark : (rng() < 0.18 ? ramp.light : ramp.mid);
-        g.set(ox + x, oy + y, c);
-        g.set(ox + size - 1 - x, oy + y, c);
+      const px = ox + x, py = oy + y;
+      const d = Math.hypot((px - cx) / (size / 2), (py - cy) / (size / 2));
+      if (rng() < 0.92 - d * 0.95) {
+        const c = rng() < 0.2 ? ramp.dark : (rng() < 0.16 ? ramp.light : ramp.mid);
+        g.set(px, py, c);
+        g.set(ox + size - 1 - x, py, c);
       }
     }
   }
-  /* eyes — always visible, element-tinted */
-  const ey = oy + Math.floor(size * 0.32) + Math.floor(rng() * 2);
+
+  /* archetype features */
+  const top = oy, bot = oy + size - 1;
+  if (mon.archetype === 1) { /* horned */
+    for (const sx of [ox + 1, ox + size - 2]) {
+      g.set(sx, top - 1, ramp.light); g.set(sx, top - 2, ramp.light);
+      g.set(sx + (sx < cx ? 1 : -1), top, ramp.mid);
+    }
+  } else if (mon.archetype === 2) { /* winged */
+    const wy = Math.round(cy) - 1;
+    for (let i = 0; i < 4; i++) {
+      g.set(ox - 1 - i, wy - i, ramp.mid); g.set(ox - 1 - i, wy - i + 1, ramp.dark);
+      g.set(ox + size + i, wy - i, ramp.mid); g.set(ox + size + i, wy - i + 1, ramp.dark);
+    }
+  } else if (mon.archetype === 3) { /* spiked */
+    for (let x = 1; x < size - 1; x += 3) {
+      g.set(ox + x, top - 1, ramp.light);
+      if (rng() < 0.6) g.set(ox + x, top - 2, ramp.light);
+    }
+  }
+  if (mon.isBoss) { /* crown */
+    const mid = Math.round(cx);
+    for (const dx of [-3, 0, 3]) { g.set(mid + dx, top - 3, '#ffd166'); g.set(mid + dx, top - 2, '#ffd166'); }
+    for (let dx = -3; dx <= 3; dx++) g.set(mid + dx, top - 1, '#e0a800');
+  }
+
+  /* eyes + maw */
+  const ey = oy + Math.floor(size * 0.34) + Math.floor(rng() * 2);
   const exo = 2 + Math.floor(rng() * 2);
   const eyeC = mon.isBoss ? '#ff4d6d' : '#ffe14d';
   for (const ex of [ox + half - exo, ox + size - 1 - half + exo]) {
-    g.set(ex, ey, eyeC); g.set(ex, ey - 1, eyeC);
-    g.set(ex, ey + 1, '#10121f');
+    rect(g, ex, ey - 1, 1, 2, eyeC);
+    if (mon.isBoss) rect(g, ex + (ex < cx ? 1 : -1), ey - 1, 1, 2, eyeC);
+    g.set(ex, ey + 1, OUTLINE);
   }
+  const my = oy + Math.floor(size * 0.62);
+  rect(g, Math.round(cx) - 1, my, 3, 1, '#10121f');
+
   return applyOutline(g);
 }
 
@@ -445,13 +560,7 @@ function paintGrid(canvas, grid) {
   }
 }
 
-/* ---------------- battle engine ---------------- */
-
-const battle = {
-  hero: null, mon: null, floor: 1, runNonce: 0,
-  hp: 0, maxHp: 0, mhp: 0, cd: 0, potions: 3, stunned: 0,
-  usedSturdy: false, over: false, busy: false,
-};
+/* ---------------- battle math ---------------- */
 
 function heroAtk(h, hpFrac) {
   let a = h.stats.atk;
@@ -475,6 +584,25 @@ function damage(atk, def, mult, critPct, rng) {
   return { dmg: Math.max(1, Math.round(dmg)), crit };
 }
 
+/* ---------------- gene helpers (shared) ---------------- */
+
+function parseGene(text) {
+  if (!text) return null;
+  text = text.trim();
+  if (/^https?:\/\//i.test(text) || text.includes('?g=') || text.includes('?s=')) {
+    const q = text.split('?')[1] || '';
+    const p = new URLSearchParams(q);
+    const v = p.get('g') || p.get('s');
+    if (v) return v.slice(0, 120);
+  }
+  if (text.startsWith('HB1:')) return text.slice(4, 124);
+  return text.slice(0, 120);
+}
+
+function fuseSeed(hashA, hashB) {
+  return 'FUSE:' + [hashA.slice(0, 16), hashB.slice(0, 16)].sort().join('*');
+}
+
 /* ---------------- DOM / UI ---------------- */
 
 if (typeof document !== 'undefined') (function () {
@@ -482,45 +610,107 @@ if (typeof document !== 'undefined') (function () {
   const $ = id => document.getElementById(id);
   const els = {};
   ['seedInput', 'btnSummon', 'btnRandom', 'btnDaily', 'reveal', 'beam', 'heroCard', 'heroCanvas',
-   'heroName', 'heroTitle', 'rarityBadge', 'heroMeta', 'heroTrait', 'heroHash', 'statBars',
-   'btnSpire', 'btnShare', 'btnAgain', 'shareNote',
+   'heroName', 'heroTitle', 'rarityBadge', 'rarityGems', 'heroMeta', 'heroTrait', 'heroHash', 'heroLineage', 'statBars',
+   'btnSpire', 'btnShare', 'btnGene', 'btnAgain', 'shareNote',
    'spireLocked', 'spireArena', 'floorLabel', 'bhName', 'bhMeta', 'bhCanvas', 'bhHpBar', 'bhHpText',
    'bmName', 'bmMeta', 'bmCanvas', 'bmHpBar', 'bmHpText', 'log',
    'btnAttack', 'btnSkill', 'btnGuard', 'btnPotion', 'battleEnd', 'endTitle', 'endDesc', 'btnRetry', 'btnEndSummon',
    'hallGrid', 'hallEmpty', 'oddsTable',
+   'geneSelf', 'geneSelfEmpty', 'gsCanvas', 'gsName', 'gsRarity', 'qrCanvas', 'geneCode', 'btnCopyGene',
+   'btnScan', 'btnStopScan', 'scanBox', 'scanVideo', 'scanMsg', 'geneInput', 'btnLoadGene',
+   'geneForeign', 'gfCanvas', 'gfName', 'gfRarity', 'gfMeta',
+   'geneActions', 'btnFuse', 'btnMutate', 'geneNote',
+   'bgStars',
   ].forEach(id => els[id] = $(id));
 
   let currentHero = null;
+  let pendingLineage = null;
+
+  /* ----- animated pixel starfield background ----- */
+  (function starfield() {
+    const c = els.bgStars; if (!c) return;
+    const ctx = c.getContext('2d');
+    let stars = [];
+    function resize() {
+      c.width = innerWidth / 3 | 0; c.height = innerHeight / 3 | 0;
+      stars = Array.from({ length: 90 }, () => ({
+        x: Math.random() * c.width, y: Math.random() * c.height,
+        s: Math.random() * 0.06 + 0.015,
+        c: Math.random() < 0.82 ? '#3a4068' : (Math.random() < 0.5 ? '#ffd16655' : '#5de4c755'),
+        tw: Math.random() * Math.PI * 2,
+      }));
+    }
+    resize(); addEventListener('resize', resize);
+    (function tick(t) {
+      ctx.clearRect(0, 0, c.width, c.height);
+      for (const s of stars) {
+        s.y += s.s; if (s.y > c.height) { s.y = -1; s.x = Math.random() * c.width; }
+        const a = 0.55 + Math.sin(t / 900 + s.tw) * 0.45;
+        ctx.globalAlpha = a;
+        ctx.fillStyle = s.c;
+        ctx.fillRect(s.x | 0, s.y | 0, 1, 1);
+      }
+      ctx.globalAlpha = 1;
+      requestAnimationFrame(tick);
+    })(0);
+  })();
+
+  /* ----- idle animation ticker: repaints registered hero canvases ----- */
+  const animReg = new Map(); // canvas → hero
+  let animFrame = 0;
+  setInterval(() => {
+    animFrame ^= 1;
+    for (const [canvas, hero] of animReg) {
+      if (!canvas.isConnected) { animReg.delete(canvas); continue; }
+      paintGrid(canvas, buildHeroGrid(hero, animFrame));
+    }
+  }, 480);
+  function bindHeroCanvas(canvas, hero) {
+    animReg.set(canvas, hero);
+    paintGrid(canvas, buildHeroGrid(hero, animFrame));
+  }
 
   /* ----- screens ----- */
-  const screens = ['summon', 'spire', 'hall'];
+  const screens = ['summon', 'spire', 'gene', 'hall'];
   function show(name) {
     screens.forEach(s => {
       $(`screen-${s}`).classList.toggle('active', s === name);
       $(`tab-${s}`).classList.toggle('active', s === name);
     });
     if (name === 'hall') renderHall();
+    if (name === 'gene') renderGeneSelf();
+    if (name !== 'gene') stopScan();
   }
   screens.forEach(s => $(`tab-${s}`).addEventListener('click', () => show(s)));
 
-  /* ----- hall persistence ----- */
+  /* ----- hall persistence (with lineage) ----- */
   const STORE = 'hashborn.hall.v1';
   const loadHall = () => { try { return JSON.parse(localStorage.getItem(STORE)) || []; } catch { return []; } };
   const saveHall = h => localStorage.setItem(STORE, JSON.stringify(h.slice(0, 200)));
 
-  function recordHero(hero) {
+  function recordHero(hero, lineage) {
     const hall = loadHall();
     const i = hall.findIndex(e => e.seed === hero.seed);
-    const entry = { seed: hero.seed, name: hero.name, rarity: hero.rarity.key, cls: hero.cls.key, best: i >= 0 ? hall[i].best : 0, ts: Date.now() };
-    if (i >= 0) entry.best = hall[i].best, hall.splice(i, 1);
+    const prev = i >= 0 ? hall[i] : {};
+    const entry = {
+      seed: hero.seed, name: hero.name, rarity: hero.rarity.key, cls: hero.cls.key,
+      best: prev.best || 0,
+      gen: lineage ? lineage.gen : (prev.gen || 1),
+      parents: lineage ? lineage.parents : (prev.parents || null),
+      mut: lineage ? !!lineage.mut : !!prev.mut,
+      ts: Date.now(),
+    };
+    if (i >= 0) hall.splice(i, 1);
     hall.unshift(entry);
     saveHall(hall);
+    return entry;
   }
   function recordBest(seed, floor) {
     const hall = loadHall();
     const e = hall.find(x => x.seed === seed);
     if (e && floor > (e.best || 0)) { e.best = floor; saveHall(hall); }
   }
+  const hallEntry = seed => loadHall().find(e => e.seed === seed);
 
   /* ----- odds table ----- */
   els.oddsTable.innerHTML = RARITIES.map(r =>
@@ -548,7 +738,8 @@ if (typeof document !== 'undefined') (function () {
     els.btnSummon.disabled = true;
     const hero = await generateHero(seed);
     currentHero = hero;
-    recordHero(hero);
+    const lineage = pendingLineage; pendingLineage = null;
+    const entry = recordHero(hero, lineage);
 
     els.heroCard.classList.remove('shown', ...RARITIES.map(r => `r-${r.key}`));
     els.reveal.classList.remove('hidden');
@@ -561,14 +752,19 @@ if (typeof document !== 'undefined') (function () {
       els.heroTitle.textContent = hero.title;
       els.rarityBadge.textContent = r.name;
       els.rarityBadge.style.background = r.color;
+      els.rarityGems.innerHTML = RARITIES.map((x, i) =>
+        `<i style="${i <= hero.rarityIdx ? `background:${r.color};box-shadow:0 0 6px ${r.color}` : ''}"></i>`).join('');
       els.heroMeta.innerHTML =
         `<span class="chip">${hero.cls.icon} ${hero.cls.name}</span>` +
         `<span class="chip" style="color:${hero.element.color}">◆ ${hero.element.name}</span>`;
       els.heroTrait.innerHTML = `<b>${hero.trait.name}</b> — ${hero.trait.desc}<br><span class="skill-line">${hero.cls.skill.name}: ${hero.cls.skill.desc}</span>`;
       els.heroHash.textContent = hero.hash.slice(0, 16) + '…' + hero.hash.slice(-8);
       els.heroHash.title = hero.hash;
+      els.heroLineage.innerHTML = entry.gen > 1
+        ? `<span class="lineage-chip">${entry.mut ? '☢ MUTANT' : '⚗'} GEN ${entry.gen}${entry.parents ? ` · of <b>${entry.parents[0]}</b> × <b>${entry.parents[1]}</b>` : ''}</span>`
+        : '';
       renderStats(hero);
-      paintGrid(els.heroCanvas, buildHeroGrid(hero));
+      bindHeroCanvas(els.heroCanvas, hero);
       els.btnSpire.disabled = false;
       if (hero.rarityIdx >= 4) document.body.classList.add('shake');
       setTimeout(() => document.body.classList.remove('shake'), 500);
@@ -583,7 +779,7 @@ if (typeof document !== 'undefined') (function () {
       /* gacha-style reveal: white beam → flashes rarity colour → card slams in */
       els.beam.style.setProperty('--beam', hero.rarity.color);
       els.beam.classList.remove('animate');
-      void els.beam.offsetWidth; // restart animation
+      void els.beam.offsetWidth;
       els.beam.classList.add('animate');
       setTimeout(showCard, 1250);
     }
@@ -598,15 +794,197 @@ if (typeof document !== 'undefined') (function () {
     summon(els.seedInput.value);
   });
   els.btnAgain.addEventListener('click', () => { els.seedInput.value = randomUUID(); summon(els.seedInput.value); });
+  els.btnGene.addEventListener('click', () => show('gene'));
+
+  const shareUrl = seed => `${location.origin}${location.pathname}?g=${encodeURIComponent(seed)}`;
 
   els.btnShare.addEventListener('click', async () => {
     if (!currentHero) return;
-    const url = `${location.origin}${location.pathname}?s=${encodeURIComponent(currentHero.seed)}`;
-    try { await navigator.clipboard.writeText(url); els.shareNote.textContent = 'Link copied! Anyone who opens it meets the exact same soul.'; }
-    catch { els.shareNote.textContent = url; }
+    try { await navigator.clipboard.writeText(shareUrl(currentHero.seed)); els.shareNote.textContent = 'Link copied! Anyone who opens it meets the exact same soul.'; }
+    catch { els.shareNote.textContent = shareUrl(currentHero.seed); }
   });
 
-  /* ----- battle ----- */
+  /* ============================================================
+     GENE LAB — QR identity, camera scanning, fuse & mutate
+     ============================================================ */
+
+  let foreignHero = null;
+
+  function renderQR(canvas, text) {
+    if (typeof qrcode === 'undefined') { canvas.style.display = 'none'; return; }
+    canvas.style.display = '';
+    const qr = qrcode(0, 'M');
+    qr.addData(text);
+    qr.make();
+    const n = qr.getModuleCount(), quiet = 2;
+    canvas.width = canvas.height = n + quiet * 2;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#e8e9f2'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#0e1020';
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++)
+      if (qr.isDark(y, x)) ctx.fillRect(x + quiet, y + quiet, 1, 1);
+  }
+
+  function renderGeneSelf() {
+    const has = !!currentHero;
+    els.geneSelf.classList.toggle('hidden', !has);
+    els.geneSelfEmpty.classList.toggle('hidden', has);
+    if (!has) return;
+    bindHeroCanvas(els.gsCanvas, currentHero);
+    els.gsName.textContent = `${currentHero.name} ${currentHero.title}`;
+    els.gsRarity.textContent = currentHero.rarity.name;
+    els.gsRarity.style.color = currentHero.rarity.color;
+    els.geneCode.textContent = `HB1:${currentHero.seed}`;
+    renderQR(els.qrCanvas, shareUrl(currentHero.seed));
+    updateGeneActions();
+  }
+
+  els.btnCopyGene.addEventListener('click', async () => {
+    if (!currentHero) return;
+    try { await navigator.clipboard.writeText(shareUrl(currentHero.seed)); note('Gene link copied — let a friend scan or paste it.'); }
+    catch { note(shareUrl(currentHero.seed)); }
+  });
+
+  function note(msg, bad = false) {
+    els.geneNote.textContent = msg;
+    els.geneNote.classList.toggle('bad', bad);
+  }
+
+  /* --- camera scanning: BarcodeDetector with jsQR fallback --- */
+  let scanStream = null, scanRAF = 0;
+
+  async function startScan() {
+    note('');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return note('Camera not available in this browser — paste a gene code instead.', true);
+    }
+    try {
+      scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    } catch {
+      return note('Camera permission denied — paste a gene code instead.', true);
+    }
+    els.scanBox.classList.remove('hidden');
+    els.btnScan.classList.add('hidden');
+    els.scanVideo.srcObject = scanStream;
+    await els.scanVideo.play().catch(() => {});
+    els.scanMsg.textContent = 'Aim at a HASHBORN gene QR…';
+
+    const detector = ('BarcodeDetector' in window)
+      ? new BarcodeDetector({ formats: ['qr_code'] }).detect.bind(new BarcodeDetector({ formats: ['qr_code'] }))
+      : null;
+    const grab = document.createElement('canvas');
+    let last = 0;
+
+    const loop = async (t) => {
+      if (!scanStream) return;
+      scanRAF = requestAnimationFrame(loop);
+      if (t - last < 180 || els.scanVideo.readyState < 2) return;
+      last = t;
+      let raw = null;
+      try {
+        if (detector) {
+          const codes = await detector(els.scanVideo);
+          if (codes.length) raw = codes[0].rawValue;
+        } else if (typeof jsQR !== 'undefined') {
+          const w = grab.width = els.scanVideo.videoWidth, h = grab.height = els.scanVideo.videoHeight;
+          if (!w) return;
+          const gctx = grab.getContext('2d', { willReadFrequently: true });
+          gctx.drawImage(els.scanVideo, 0, 0, w, h);
+          const code = jsQR(gctx.getImageData(0, 0, w, h).data, w, h);
+          if (code) raw = code.data;
+        } else {
+          stopScan();
+          return note('No QR decoder available — paste the gene code instead.', true);
+        }
+      } catch { /* keep scanning */ }
+      if (raw) {
+        const seed = parseGene(raw);
+        stopScan();
+        if (seed) await loadForeign(seed);
+        else note('That QR is not a HASHBORN gene.', true);
+      }
+    };
+    scanRAF = requestAnimationFrame(loop);
+  }
+
+  function stopScan() {
+    if (scanRAF) cancelAnimationFrame(scanRAF), scanRAF = 0;
+    if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+    if (els.scanBox) {
+      els.scanBox.classList.add('hidden');
+      els.btnScan.classList.remove('hidden');
+    }
+  }
+
+  els.btnScan.addEventListener('click', startScan);
+  els.btnStopScan.addEventListener('click', stopScan);
+
+  async function loadForeign(seed) {
+    foreignHero = await generateHero(seed);
+    els.geneForeign.classList.remove('hidden');
+    bindHeroCanvas(els.gfCanvas, foreignHero);
+    els.gfName.textContent = `${foreignHero.name} ${foreignHero.title}`;
+    els.gfRarity.textContent = foreignHero.rarity.name;
+    els.gfRarity.style.color = foreignHero.rarity.color;
+    els.gfMeta.innerHTML = `${foreignHero.cls.icon} ${foreignHero.cls.name} · <span style="color:${foreignHero.element.color}">◆ ${foreignHero.element.name}</span>`;
+    note('Foreign gene decoded.');
+    updateGeneActions();
+  }
+
+  function updateGeneActions() {
+    const ready = currentHero && foreignHero && currentHero.seed !== foreignHero.seed;
+    els.geneActions.classList.toggle('hidden', !ready);
+    if (currentHero && foreignHero && currentHero.seed === foreignHero.seed) {
+      note('Same soul on both sides — a gene cannot fuse with itself.', true);
+    }
+  }
+
+  els.btnLoadGene.addEventListener('click', async () => {
+    const seed = parseGene(els.geneInput.value);
+    if (!seed) return note('Paste a gene link or code first.', true);
+    await loadForeign(seed);
+  });
+  els.geneInput.addEventListener('keydown', e => { if (e.key === 'Enter') els.btnLoadGene.click(); });
+
+  function genOf(seed) { const e = hallEntry(seed); return e ? (e.gen || 1) : 1; }
+
+  els.btnFuse.addEventListener('click', async () => {
+    if (!currentHero || !foreignHero) return;
+    const child = fuseSeed(currentHero.hash, foreignHero.hash);
+    pendingLineage = {
+      gen: Math.max(genOf(currentHero.seed), genOf(foreignHero.seed)) + 1,
+      parents: [currentHero.name, foreignHero.name],
+    };
+    els.seedInput.value = child;
+    show('summon');
+    await summon(child);
+  });
+
+  els.btnMutate.addEventListener('click', async () => {
+    if (!currentHero || !foreignHero) return;
+    const pair = [currentHero.hash.slice(0, 12), foreignHero.hash.slice(0, 12)].sort().join('x');
+    const ctKey = 'hashborn.mut.' + pair;
+    const n = (parseInt(localStorage.getItem(ctKey)) || 0) + 1;
+    localStorage.setItem(ctKey, n);
+    const child = `MUT:${pair}:${n}`;
+    pendingLineage = {
+      gen: genOf(currentHero.seed) + 1,
+      parents: [currentHero.name, foreignHero.name],
+      mut: true,
+    };
+    els.seedInput.value = child;
+    show('summon');
+    await summon(child);
+  });
+
+  /* ---------------- battle ---------------- */
+
+  const battle = {
+    hero: null, mon: null, floor: 1, runNonce: 0,
+    hp: 0, maxHp: 0, mhp: 0, cd: 0, potions: 3, stunned: 0,
+    usedSturdy: false, over: false, busy: false,
+  };
+
   function log(msg, cls = '') {
     const div = document.createElement('div');
     div.className = `log-line ${cls}`;
@@ -656,7 +1034,7 @@ if (typeof document !== 'undefined') (function () {
     els.spireArena.classList.remove('hidden');
     els.bhName.textContent = h.name;
     els.bhMeta.innerHTML = `<span>${h.cls.icon} ${h.cls.name}</span> · <span style="color:${h.rarity.color}">${h.rarity.name}</span>`;
-    paintGrid(els.bhCanvas, buildHeroGrid(h));
+    bindHeroCanvas(els.bhCanvas, h);
     els.log.innerHTML = '';
     log(`<b>${h.name} ${h.title}</b> enters the Spire. Rarity: <b style="color:${h.rarity.color}">${h.rarity.name}</b>.`, 'l-sys');
     await newFloor();
@@ -761,7 +1139,7 @@ if (typeof document !== 'undefined') (function () {
     setBars();
     log(`<b>${battle.hero.name}</b> has fallen on floor ${battle.floor}…`, 'l-boss');
     els.endTitle.textContent = `FALLEN ON FLOOR ${battle.floor}`;
-    const best = (loadHall().find(e => e.seed === battle.hero.seed) || {}).best || 0;
+    const best = (hallEntry(battle.hero.seed) || {}).best || 0;
     els.endDesc.textContent = `${battle.hero.name} ${battle.hero.title} cleared ${battle.floor - 1} floor${battle.floor - 1 === 1 ? '' : 's'}. Best: ${best}.`;
     els.battleEnd.classList.remove('hidden');
   }
@@ -808,7 +1186,7 @@ if (typeof document !== 'undefined') (function () {
           break;
         }
       }
-    }).catch(swallow));
+    }, false, false).catch(swallow));
 
   els.btnGuard.addEventListener('click', () =>
     resolveRound(async () => {
@@ -826,11 +1204,8 @@ if (typeof document !== 'undefined') (function () {
       log(`<b>${battle.hero.name}</b> drinks a potion and restores <b>${heal}</b> HP.`, 'l-hero');
     }).catch(swallow));
 
-  /* tick cooldown at the end of each player action round */
-  ['btnAttack', 'btnGuard', 'btnPotion'].forEach(id =>
-    els[id].addEventListener('click', () => { if (battle.cd > 0) battle.cd--; }));
+  /* ---------------- hall ---------------- */
 
-  /* ----- hall ----- */
   async function renderHall() {
     const hall = loadHall();
     els.hallEmpty.classList.toggle('hidden', hall.length > 0);
@@ -839,10 +1214,10 @@ if (typeof document !== 'undefined') (function () {
       const r = RARITIES.find(x => x.key === e.rarity);
       const card = document.createElement('button');
       card.className = `hall-card r-${e.rarity}`;
-      card.innerHTML = `<canvas width="28" height="28"></canvas>
+      card.innerHTML = `<canvas width="32" height="32"></canvas>
         <span class="hc-name">${e.name}</span>
         <span class="hc-rarity" style="color:${r.color}">${r.name}</span>
-        <span class="hc-best">⛩ ${e.best || 0}</span>`;
+        <span class="hc-best">⛩ ${e.best || 0}${e.gen > 1 ? ` · ${e.mut ? '☢' : '⚗'}G${e.gen}` : ''}</span>`;
       card.title = `seed: ${e.seed}`;
       card.addEventListener('click', async () => {
         els.seedInput.value = e.seed;
@@ -855,16 +1230,16 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
-  /* ----- boot: shared link or fresh start ----- */
+  /* ----- boot: shared link / gene link / fresh start ----- */
   const params = new URLSearchParams(location.search);
-  const shared = params.get('s');
-  if (shared) {
-    els.seedInput.value = shared;
-    summon(shared);
+  const sharedSeed = params.get('s') || params.get('g');
+  if (sharedSeed) {
+    els.seedInput.value = sharedSeed;
+    summon(sharedSeed);
   }
 })();
 
 /* headless test hook (node) */
 if (typeof module !== 'undefined') {
-  module.exports = { sha256Hex, sha256Fallback, generateHero, generateMonster, buildHeroGrid, buildMonsterGrid, RARITIES, CLASSES, damage, elementMod, heroAtk, heroDef };
+  module.exports = { sha256Hex, sha256Fallback, generateHero, generateMonster, buildHeroGrid, buildMonsterGrid, RARITIES, CLASSES, damage, elementMod, heroAtk, heroDef, parseGene, fuseSeed };
 }
