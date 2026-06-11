@@ -3,366 +3,151 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>The Itchy Wombat 🐾</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body {
-    height: 100%;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: linear-gradient(#aee0ff 0%, #cdeeff 100%);
-    overflow: hidden;
-    user-select: none;
-    -webkit-user-select: none;
-  }
-  .wrap {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    padding: 16px;
-  }
-  .scorebar { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-  .score {
-    font-size: clamp(18px, 4.5vw, 30px);
-    font-weight: 800;
-    color: #2f6b27;
-    background: #ffffffcc;
-    border: 3px solid #5fb84f;
-    border-radius: 999px;
-    padding: 8px 22px;
-    box-shadow: 0 4px 0 #3f9a37;
-    letter-spacing: 0.02em;
-  }
-  .score.best { color: #b5820f; border-color: #ffce4d; box-shadow: 0 4px 0 #e0a800; }
-  .stage { position: relative; line-height: 0; }
-  canvas {
-    width: min(92vw, 560px);
-    height: auto;
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
-    border: 4px solid #3f9a37;
-    border-radius: 14px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-    cursor: pointer;
-    touch-action: manipulation;
-  }
-  .hint {
-    font-size: clamp(13px, 3.5vw, 16px);
-    color: #2f6b27;
-    background: #ffffffaa;
-    padding: 6px 16px;
-    border-radius: 999px;
-  }
-  .pop {
-    position: absolute;
-    font-weight: 800;
-    color: #ffeb3b;
-    -webkit-text-stroke: 1.5px #b5820f;
-    text-stroke: 1.5px #b5820f;
-    font-size: 26px;
-    pointer-events: none;
-    transform: translate(-50%, -50%);
-    animation: floatUp 0.7s ease-out forwards;
-  }
-  .pop.treat { color: #9be24d; -webkit-text-stroke: 1.5px #2f6b27; text-stroke: 1.5px #2f6b27; }
-  @keyframes floatUp {
-    0%   { opacity: 1; transform: translate(-50%, -50%) scale(0.6); }
-    30%  { opacity: 1; transform: translate(-50%, -120%) scale(1.2); }
-    100% { opacity: 0; transform: translate(-50%, -220%) scale(1); }
-  }
-</style>
+<title>HASHBORN — every soul is forged from a hash</title>
+<meta name="description" content="A pixel-art mini RPG where your hero is deterministically forged from a SHA-256 hash. Rarity is king. No one is the same." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230e1020'/><rect x='4' y='2' width='8' height='8' fill='%23ffd166'/><rect x='6' y='5' width='1' height='2' fill='%230e1020'/><rect x='9' y='5' width='1' height='2' fill='%230e1020'/><rect x='5' y='10' width='6' height='4' fill='%234f9df7'/></svg>" />
 </head>
 <body>
-  <div class="wrap">
-    <div class="scorebar">
-      <div class="score" id="score">🐾 Score: 0</div>
-      <div class="score best" id="best">🏆 Best: 0</div>
+
+<header>
+  <div class="logo">HASH<span class="accent">BORN</span></div>
+  <div class="tagline">Every soul is forged from a hash · Rarity is king · No one is the same</div>
+</header>
+
+<nav class="wrap">
+  <button class="tab active" id="tab-summon">⚒ SUMMON</button>
+  <button class="tab" id="tab-spire">⛩ THE SPIRE</button>
+  <button class="tab" id="tab-hall">✦ HALL OF SOULS</button>
+</nav>
+
+<main class="wrap">
+
+  <!-- ============ SUMMON ============ -->
+  <section class="screen active" id="screen-summon">
+    <div class="summon-grid">
+      <div class="panel">
+        <h2>FORGE A SOUL</h2>
+        <p class="lore">
+          Type anything — your name, a word, a <b>UUID</b> — and it is hashed with
+          <b>SHA-256</b> into a one-of-a-kind hero. The same seed always forges the
+          <b>exact same soul</b>, for everyone, forever. Choose wisely… or roll the dice.
+        </p>
+        <div class="seed-row">
+          <input id="seedInput" type="text" maxlength="120" placeholder="enter any seed… (e.g. your name)" autocomplete="off" spellcheck="false" />
+          <button class="btn primary" id="btnSummon">SUMMON</button>
+        </div>
+        <div class="seed-buttons">
+          <button class="btn" id="btnRandom">⚄ RANDOM UUID</button>
+          <button class="btn ghost" id="btnDaily">☀ HERO OF THE DAY</button>
+        </div>
+        <p class="hint">
+          The first 4 bytes of your hash seal your rarity — <code>provably fair</code>,
+          verifiable by anyone. Share your seed and friends will meet the identical hero.
+        </p>
+      </div>
+
+      <div class="panel">
+        <h2>RARITY IS KING</h2>
+        <div id="oddsTable"></div>
+        <p class="odds-note">
+          Rarity multiplies every stat — a Mythic soul is forged ~2.25× stronger
+          than a Common one, and it shows in the Spire.
+        </p>
+      </div>
     </div>
-    <div class="stage">
-      <canvas id="scene" width="64" height="48"></canvas>
+
+    <div id="reveal" class="hidden">
+      <div id="beam"></div>
+      <div class="hero-card" id="heroCard">
+        <span id="rarityBadge">COMMON</span>
+        <div class="portrait"><canvas id="heroCanvas" width="28" height="28"></canvas></div>
+        <div id="heroName">—</div>
+        <div id="heroTitle">—</div>
+        <div class="meta-row" id="heroMeta"></div>
+        <div class="trait-box" id="heroTrait"></div>
+        <div id="statBars"></div>
+        <div class="hash-strip" id="heroHash"></div>
+        <div class="card-actions">
+          <button class="btn primary" id="btnSpire" disabled>⛩ ENTER THE SPIRE</button>
+          <button class="btn" id="btnShare">⎘ SHARE LINK</button>
+          <button class="btn ghost" id="btnAgain">⚄ ROLL ANOTHER</button>
+        </div>
+        <div id="shareNote"></div>
+      </div>
     </div>
-    <div class="hint">Tap the wombat to scratch · grab the treats! 🐾</div>
-  </div>
+  </section>
 
-<script>
-const cv = document.getElementById('scene');
-const ctx = cv.getContext('2d');
-const scoreEl = document.getElementById('score');
-const bestEl = document.getElementById('best');
-const stage = document.querySelector('.stage');
-const W = 64, H = 48;
+  <!-- ============ THE SPIRE ============ -->
+  <section class="screen" id="screen-spire">
+    <div id="spireLocked" class="panel">
+      <p>The Spire is sealed.<br />Forge a soul on the <b>SUMMON</b> page, then enter.</p>
+    </div>
 
-let score = 0;
-let scratch = false;
-let scratchUntil = 0;
+    <div id="spireArena" class="hidden">
+      <div id="floorLabel">FLOOR 1</div>
 
-let best = parseInt(localStorage.getItem('wombatBest') || '0', 10) || 0;
-bestEl.textContent = '🏆 Best: ' + best;
+      <div class="panel">
+        <div class="arena">
+          <div class="fighter">
+            <div class="frame"><canvas id="bhCanvas" width="28" height="28"></canvas></div>
+            <div class="f-name" id="bhName">—</div>
+            <div class="f-meta" id="bhMeta"></div>
+            <div class="hp-wrap">
+              <div class="hp-bar"><i id="bhHpBar"></i></div>
+              <div class="hp-text" id="bhHpText"></div>
+            </div>
+          </div>
 
-function addScore(n) {
-  score += n;
-  scoreEl.textContent = '🐾 Score: ' + score;
-  if (score > best) {
-    best = score;
-    localStorage.setItem('wombatBest', best);
-    bestEl.textContent = '🏆 Best: ' + best;
-  }
-}
+          <div class="vs">VS</div>
 
-// ---- sound (Web Audio, synthesised — no files) ----
-let audioCtx, noiseBuf;
-function ensureAudio() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const len = Math.floor(audioCtx.sampleRate * 0.2);
-    noiseBuf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
-    const d = noiseBuf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-  }
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-}
-function playScratch() {
-  ensureAudio();
-  const t0 = audioCtx.currentTime;
-  for (let i = 0; i < 3; i++) {
-    const src = audioCtx.createBufferSource(); src.buffer = noiseBuf;
-    const bp = audioCtx.createBiquadFilter(); bp.type = 'bandpass';
-    bp.frequency.value = 1700 + i * 250; bp.Q.value = 0.9;
-    const g = audioCtx.createGain();
-    const t = t0 + i * 0.13;
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(0.22, t + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-    src.connect(bp).connect(g).connect(audioCtx.destination);
-    src.start(t); src.stop(t + 0.12);
-  }
-}
-function playCollect() {
-  ensureAudio();
-  const now = audioCtx.currentTime;
-  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-  o.type = 'triangle';
-  o.frequency.setValueAtTime(620, now);
-  o.frequency.exponentialRampToValueAtTime(1180, now + 0.12);
-  g.gain.setValueAtTime(0.0001, now);
-  g.gain.exponentialRampToValueAtTime(0.3, now + 0.02);
-  g.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-  o.connect(g).connect(audioCtx.destination);
-  o.start(now); o.stop(now + 0.22);
-}
+          <div class="fighter">
+            <div class="frame"><canvas id="bmCanvas" width="18" height="18"></canvas></div>
+            <div class="f-name" id="bmName">—</div>
+            <div class="f-meta" id="bmMeta"></div>
+            <div class="hp-wrap">
+              <div class="hp-bar"><i id="bmHpBar" style="background:#ff7043"></i></div>
+              <div class="hp-text" id="bmHpText"></div>
+            </div>
+          </div>
+        </div>
 
-// ---- collectible treats on the grass ----
-const TREAT_VALUE = 5;
-const treats = [];   // { x, y, type }
-function spawnTreat() {
-  if (treats.length >= 3) return;
-  const x = 5 + Math.floor(Math.random() * 54);
-  const y = 33 + Math.floor(Math.random() * 11);
-  treats.push({ x, y, type: Math.floor(Math.random() * 3) });
-}
-setInterval(spawnTreat, 1600);
-spawnTreat();
+        <div class="actions">
+          <button class="btn" id="btnAttack">STRIKE</button>
+          <button class="btn" id="btnSkill">SKILL</button>
+          <button class="btn" id="btnGuard">GUARD</button>
+          <button class="btn" id="btnPotion">POTION ×3</button>
+        </div>
 
-const COL = {
-  sky: '#aee0ff', cloud: '#ffffff', sun: '#ffd84d',
-  grass: '#5fb84f', grassDark: '#3f9a37', blade: '#2f7d2a',
-  dark: '#2e2018',                      // outline
-  body: '#a17a45',                      // warm golden-brown fur
-  bodyLt: '#c8a366',                     // sunlit back highlight
-  face: '#7a5836',                       // darker brown face/muzzle
-  shadow: '#6b4d30',                     // far legs / underside
-  nose: '#3b2c24',                       // big bare nose
-  noseLt: '#5a463a',
-  eye: '#160f09', white: '#ffffff',
-  ear: '#6e503a', claw: '#211711',
-};
+        <div id="log"></div>
+      </div>
 
-// fixed decor so nothing flickers between frames
-const clouds = [[8, 6], [38, 9], [52, 5]];
-const blades = [];
-for (let x = 1; x < W; x += 3) blades.push([x, 30 + (x * 7 % 3)]);
-const flowers = [[10, 41, '#ffe24d'], [30, 45, '#ffffff'], [54, 42, '#ff9ed2'], [44, 46, '#ffffff']];
+      <div class="panel hidden" id="battleEnd">
+        <div id="endTitle">FALLEN</div>
+        <div id="endDesc"></div>
+        <button class="btn primary" id="btnRetry">⟳ CLIMB AGAIN</button>
+        <button class="btn" id="btnEndSummon">⚒ NEW SOUL</button>
+      </div>
+    </div>
+  </section>
 
-function rect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
+  <!-- ============ HALL OF SOULS ============ -->
+  <section class="screen" id="screen-hall">
+    <div id="hallEmpty" class="panel">
+      <p>The Hall is empty.<br />Every soul you forge is remembered here, along with its deepest climb.</p>
+    </div>
+    <div id="hallGrid"></div>
+  </section>
 
-// filled pixel ellipse centred at (cx,cy)
-function ell(cx, cy, rx, ry, c) {
-  for (let dy = -ry; dy <= ry; dy++) {
-    const t = 1 - (dy * dy) / (ry * ry);
-    if (t < 0) continue;
-    const dx = Math.floor(rx * Math.sqrt(t) + 0.5);
-    rect(cx - dx, cy + dy, dx * 2 + 1, 1, c);
-  }
-}
+</main>
 
-function drawSun(cx, cy) {
-  rect(cx - 2, cy - 1, 5, 3, COL.sun);
-  rect(cx - 1, cy - 2, 3, 5, COL.sun);
-  rect(cx - 4, cy, 1, 1, COL.sun); rect(cx + 4, cy, 1, 1, COL.sun);
-  rect(cx, cy - 4, 1, 1, COL.sun); rect(cx, cy + 4, 1, 1, COL.sun);
-}
-function drawCloud(x, y) {
-  rect(x, y, 9, 3, COL.cloud);
-  rect(x + 2, y - 2, 5, 3, COL.cloud);
-}
+<footer>
+  HASHBORN · a deterministic pixel RPG · your heroes live in <i>this browser</i> — share seeds, not saves
+</footer>
 
-function drawTreat(t) {
-  const x = t.x, y = t.y;
-  if (t.type === 0) {            // berry
-    rect(x, y, 3, 3, '#e0413b');
-    rect(x, y, 1, 1, '#ff8a84');
-    rect(x + 1, y - 1, 1, 1, '#3f9a37');
-  } else if (t.type === 1) {     // mushroom
-    rect(x, y, 3, 2, '#d94f4f');
-    rect(x, y, 1, 1, '#ffffff'); rect(x + 2, y, 1, 1, '#ffffff');
-    rect(x + 1, y + 2, 1, 2, '#f0e6cf');
-  } else {                       // flower
-    rect(x + 1, y, 1, 1, '#ffd84d');
-    rect(x, y, 1, 1, '#ffffff'); rect(x + 2, y, 1, 1, '#ffffff');
-    rect(x + 1, y - 1, 1, 1, '#ffffff'); rect(x + 1, y + 1, 1, 1, '#ffffff');
-    rect(x + 1, y + 2, 1, 2, '#3f9a37');
-  }
-}
-
-// 3/4 view: body angled right, broad face turned toward viewer.
-// B = vertical bob offset.
-function drawWombat(B, now) {
-  const y = v => v + B;
-  const wig = Math.round(Math.sin(now * 0.04));
-
-  // ---- DARK SILHOUETTE PASS (union, draws clean outline) ----
-  rect(39, y(28), 3, 6, COL.dark);            // far hind leg
-  ell(35, y(23), 14, 9, COL.dark);            // body
-  ell(20, y(23), 11, 9, COL.dark);            // broad face
-  ell(14, y(14), 3, 4, COL.dark);             // left ear
-  ell(26, y(14), 3, 4, COL.dark);             // right ear
-  ell(20, y(28), 4, 3, COL.dark);             // big nose
-  rect(47, y(20), 3, 3, COL.dark);            // tail nub
-  rect(15, y(29), 5, 6, COL.dark);            // front-left leg
-  rect(23, y(29), 5, 6, COL.dark);            // front-right leg
-
-  if (!scratch) {
-    rect(43, y(29), 5, 6, COL.dark);          // hind leg down
-  } else {
-    rect(42, y(24), 6, 4, COL.dark);          // thigh
-    rect(38, y(22), 6, 3, COL.dark);          // mid
-    rect(32, y(20), 7, 3, COL.dark);          // reach to ear
-    rect(28, y(18 + wig), 4, 3, COL.dark);    // foot by right ear
-  }
-
-  // ---- FILL PASS ----
-  rect(39, y(28), 3, 6, COL.shadow);          // far hind leg behind
-  ell(35, y(23), 13, 8, COL.body);            // body
-  ell(20, y(23), 10, 8, COL.body);            // face
-  ell(37, y(17), 9, 3, COL.bodyLt);           // sunlit golden back
-  ell(20, y(29), 6, 3, COL.face);             // darker muzzle
-  ell(14, y(14), 2, 3, COL.ear); rect(14, y(13), 1, 2, COL.dark);  // left ear
-  ell(26, y(14), 2, 3, COL.ear); rect(26, y(13), 1, 2, COL.dark);  // right ear
-  ell(20, y(28), 3, 2, COL.nose);             // big bare nose
-  rect(19, y(27), 2, 1, COL.noseLt);          // nose highlight
-  rect(47, y(20), 3, 3, COL.body);            // tail
-  rect(15, y(29), 5, 6, COL.body);            // front-left leg
-  rect(23, y(29), 5, 6, COL.body);            // front-right leg
-  rect(16, y(34), 1, 1, COL.claw); rect(18, y(34), 1, 1, COL.claw);
-  rect(24, y(34), 1, 1, COL.claw); rect(26, y(34), 1, 1, COL.claw);
-
-  // ---- fluffy fur detail ----
-  // light hairs poking up along the back & head outline
-  [[26,13],[28,12],[30,13],[33,12],[36,13],[39,12],[42,13],[45,12],
-   [13,16],[16,15],[24,15],[29,16]].forEach(([fx, fy]) => rect(fx, y(fy), 1, 2, COL.bodyLt));
-  // soft darker fur streaks for a layered, fluffy texture
-  [[31,22,4],[36,21,5],[41,23,4]].forEach(([fx, fy, fh]) => rect(fx, y(fy), 1, fh, COL.shadow));
-
-  if (!scratch) {
-    rect(43, y(29), 5, 6, COL.body);          // hind leg
-    rect(44, y(34), 1, 1, COL.claw); rect(46, y(34), 1, 1, COL.claw);
-    // open eyes
-    rect(16, y(24), 2, 2, COL.eye); rect(16, y(24), 1, 1, COL.white);
-    rect(23, y(24), 2, 2, COL.eye); rect(23, y(24), 1, 1, COL.white);
-  } else {
-    rect(42, y(24), 6, 4, COL.body);          // thigh
-    rect(38, y(22), 6, 3, COL.body);          // mid
-    rect(32, y(20), 7, 3, COL.body);          // reach to ear
-    rect(28, y(18 + wig), 4, 3, COL.shadow);  // wiggling foot
-    rect(28, y(20 + wig), 4, 1, COL.claw);    // foot claws
-    // happy closed eyes  ( ^  ^ )
-    rect(15, y(25), 1, 1, COL.eye); rect(16, y(24), 1, 1, COL.eye);
-    rect(17, y(24), 1, 1, COL.eye); rect(18, y(25), 1, 1, COL.eye);
-    rect(22, y(25), 1, 1, COL.eye); rect(23, y(24), 1, 1, COL.eye);
-    rect(24, y(24), 1, 1, COL.eye); rect(25, y(25), 1, 1, COL.eye);
-    // motion ticks near the scratch
-    rect(32, y(17 + wig), 1, 1, COL.white);
-    rect(33, y(21), 1, 1, COL.white);
-  }
-}
-
-function draw(now) {
-  ctx.clearRect(0, 0, W, H);
-  rect(0, 0, W, H, COL.sky);
-  drawSun(50, 9);
-  clouds.forEach(([x, yy]) => drawCloud(x, yy));
-  rect(0, 30, W, H - 30, COL.grass);
-  rect(0, 30, W, 1, COL.grassDark);
-  blades.forEach(([x, yy]) => rect(x, yy, 1, 2, COL.blade));
-  flowers.forEach(([x, yy, c]) => { rect(x, yy, 1, 1, c); rect(x, yy - 1, 1, 1, c); });
-
-  const bob = scratch ? 0 : Math.round(Math.sin(now / 600));
-  drawWombat(bob, now);
-  treats.forEach(drawTreat);
-
-  if (scratch && now > scratchUntil) scratch = false;
-  requestAnimationFrame(draw);
-}
-requestAnimationFrame(draw);
-
-// wombat hit box (scene coords)
-function hitWombat(sx, sy) {
-  return sx >= 8 && sx <= 52 && sy >= 9 && sy <= 36;
-}
-
-function popText(left, top, text, cls) {
-  const pop = document.createElement('div');
-  pop.className = 'pop' + (cls ? ' ' + cls : '');
-  pop.textContent = text;
-  pop.style.left = left + 'px';
-  pop.style.top = top + 'px';
-  stage.appendChild(pop);
-  setTimeout(() => pop.remove(), 700);
-}
-
-function onTap(e) {
-  const rectBox = cv.getBoundingClientRect();
-  const cxp = (e.clientX ?? (e.touches && e.touches[0].clientX));
-  const cyp = (e.clientY ?? (e.touches && e.touches[0].clientY));
-  if (cxp == null) return;
-  const sx = (cxp - rectBox.left) / rectBox.width * W;
-  const sy = (cyp - rectBox.top) / rectBox.height * H;
-  const toScreenX = x => x / W * rectBox.width;
-  const toScreenY = y => y / H * rectBox.height;
-
-  // treats first (they sit in front)
-  for (let i = 0; i < treats.length; i++) {
-    const t = treats[i];
-    if (sx >= t.x - 2 && sx <= t.x + 5 && sy >= t.y - 3 && sy <= t.y + 5) {
-      treats.splice(i, 1);
-      addScore(TREAT_VALUE);
-      playCollect();
-      popText(toScreenX(t.x + 1), toScreenY(t.y), '+' + TREAT_VALUE, 'treat');
-      return;
-    }
-  }
-
-  if (!hitWombat(sx, sy)) return;
-  addScore(1);
-  scratch = true;
-  scratchUntil = performance.now() + 750;
-  playScratch();
-  popText(cxp - rectBox.left, cyp - rectBox.top, '+1');
-}
-
-cv.addEventListener('pointerdown', onTap);
-</script>
+<script src="game.js"></script>
 </body>
 </html>
