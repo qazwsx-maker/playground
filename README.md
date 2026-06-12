@@ -1,4 +1,4 @@
-# ⚒ HASHBORN
+# ⚒ HASHHERO
 
 > **Every soul is forged from a hash · Rarity is king · No one is the same**
 

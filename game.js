@@ -1,7 +1,7 @@
 'use strict';
 
 /* ============================================================
-   HASHBORN — every soul is forged from a hash.
+   HASHHERO — every soul is forged from a hash.
    Deterministic hero generation: same seed → same hero, forever.
    ============================================================ */
 
@@ -684,7 +684,7 @@ if (typeof document !== 'undefined') (function () {
   screens.forEach(s => $(`tab-${s}`).addEventListener('click', () => show(s)));
 
   /* ----- hall persistence (with lineage) ----- */
-  const STORE = 'hashborn.hall.v1';
+  const STORE = 'hashhero.hall.v1';
   const loadHall = () => { try { return JSON.parse(localStorage.getItem(STORE)) || []; } catch { return []; } };
   const saveHall = h => localStorage.setItem(STORE, JSON.stringify(h.slice(0, 200)));
 
@@ -790,7 +790,7 @@ if (typeof document !== 'undefined') (function () {
   els.btnRandom.addEventListener('click', () => { els.seedInput.value = randomUUID(); summon(els.seedInput.value); });
   els.btnDaily.addEventListener('click', () => {
     const d = new Date().toISOString().slice(0, 10);
-    els.seedInput.value = `HASHBORN-DAILY-${d}`;
+    els.seedInput.value = `HASHHERO-DAILY-${d}`;
     summon(els.seedInput.value);
   });
   els.btnAgain.addEventListener('click', () => { els.seedInput.value = randomUUID(); summon(els.seedInput.value); });
@@ -867,7 +867,7 @@ if (typeof document !== 'undefined') (function () {
     els.btnScan.classList.add('hidden');
     els.scanVideo.srcObject = scanStream;
     await els.scanVideo.play().catch(() => {});
-    els.scanMsg.textContent = 'Aim at a HASHBORN gene QR…';
+    els.scanMsg.textContent = 'Aim at a HASHHERO gene QR…';
 
     const detector = ('BarcodeDetector' in window)
       ? new BarcodeDetector({ formats: ['qr_code'] }).detect.bind(new BarcodeDetector({ formats: ['qr_code'] }))
@@ -901,7 +901,7 @@ if (typeof document !== 'undefined') (function () {
         const seed = parseGene(raw);
         stopScan();
         if (seed) await loadForeign(seed);
-        else note('That QR is not a HASHBORN gene.', true);
+        else note('That QR is not a HASHHERO gene.', true);
       }
     };
     scanRAF = requestAnimationFrame(loop);
@@ -963,7 +963,7 @@ if (typeof document !== 'undefined') (function () {
   els.btnMutate.addEventListener('click', async () => {
     if (!currentHero || !foreignHero) return;
     const pair = [currentHero.hash.slice(0, 12), foreignHero.hash.slice(0, 12)].sort().join('x');
-    const ctKey = 'hashborn.mut.' + pair;
+    const ctKey = 'hashhero.mut.' + pair;
     const n = (parseInt(localStorage.getItem(ctKey)) || 0) + 1;
     localStorage.setItem(ctKey, n);
     const child = `MUT:${pair}:${n}`;
